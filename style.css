@@ -17,52 +17,20 @@ html[data-theme="corporate"] {
     --glass-bg: rgba(26, 41, 76, 0.6);
 }
 
-html[data-theme="emerald"] {
-    --theme-deep: #12372A;
-    --theme-mid: #205548;
-    --theme-soft: #3F7D6D;
-    --theme-panel: #173F35;
-    --theme-surface: #F1F6F3;
-    --theme-accent: #F6C344;
-    --theme-accent-strong: #DDA52C;
-    --theme-accent-rgb: 246, 195, 68;
-    --theme-muted: #668078;
+html[data-theme="aegov"] {
+    --theme-deep: #0B0E14;
+    --theme-mid: #161A23;
+    --theme-soft: #2E3748;
+    --theme-panel: #161A23;
+    --theme-surface: #F8FAFC;
+    --theme-accent: #C59B27;
+    --theme-accent-strong: #A37E1C;
+    --theme-accent-rgb: 197, 155, 39;
+    --theme-muted: #64748B;
     --text-primary: #FFFFFF;
-    --text-muted: #A3BFB5;
-    --border-color: rgba(255, 255, 255, 0.12);
-    --glass-bg: rgba(23, 63, 53, 0.6);
-}
-
-html[data-theme="charcoal"] {
-    --theme-deep: #171C24;
-    --theme-mid: #283442;
-    --theme-soft: #3E5062;
-    --theme-panel: #202C38;
-    --theme-surface: #F2F4F6;
-    --theme-accent: #F4C04E;
-    --theme-accent-strong: #D49A2F;
-    --theme-accent-rgb: 244, 192, 78;
-    --theme-muted: #667382;
-    --text-primary: #FFFFFF;
-    --text-muted: #A0B2C6;
-    --border-color: rgba(255, 255, 255, 0.12);
-    --glass-bg: rgba(32, 44, 56, 0.6);
-}
-
-html[data-theme="burgundy"] {
-    --theme-deep: #401326;
-    --theme-mid: #60233E;
-    --theme-soft: #7A3554;
-    --theme-panel: #511B33;
-    --theme-surface: #F7F2F4;
-    --theme-accent: #F2C14E;
-    --theme-accent-strong: #D6A234;
-    --theme-accent-rgb: 242, 193, 78;
-    --theme-muted: #826477;
-    --text-primary: #FFFFFF;
-    --text-muted: #CFB8C6;
-    --border-color: rgba(255, 255, 255, 0.12);
-    --glass-bg: rgba(81, 27, 51, 0.6);
+    --text-muted: #94A3B8;
+    --border-color: rgba(197, 155, 39, 0.18);
+    --glass-bg: rgba(22, 26, 35, 0.65);
 }
 
 * {
@@ -999,5 +967,28 @@ header {
     .modal-card {
         height: 90vh;
     }
+}
+
+/* Theme Toggle Button style */
+.theme-toggle-btn {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: #FFFFFF;
+    padding: 8px 16px;
+    border-radius: 10px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    font-family: 'Tajawal', sans-serif;
+    font-weight: 700;
+    transition: all 0.25s ease;
+}
+
+.theme-toggle-btn:hover {
+    background: var(--theme-accent);
+    color: var(--theme-deep);
+    border-color: var(--theme-accent);
 }
 

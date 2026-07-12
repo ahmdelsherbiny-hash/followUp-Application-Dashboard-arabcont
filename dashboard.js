@@ -672,19 +672,16 @@ function selectTheme(themeName) {
     document.documentElement.setAttribute('data-theme', themeName);
     localStorage.setItem('appTheme', themeName);
     
-    // Update theme active class in menu
-    document.querySelectorAll('.theme-menu-option').forEach(opt => {
-        if (opt.getAttribute('data-theme') === themeName) {
-            opt.classList.add('active');
-        } else {
-            opt.classList.remove('active');
-        }
-    });
-    
     // Reload charts to update visual colors
-    if (reportsData.length > 0) {
+    if (typeof renderCharts === 'function' && reportsData.length > 0) {
         setTimeout(renderCharts, 100);
     }
+}
+
+function toggleTheme() {
+    const currentTheme = document.documentElement.getAttribute('data-theme') || 'corporate';
+    const nextTheme = currentTheme === 'corporate' ? 'aegov' : 'corporate';
+    selectTheme(nextTheme);
 }
 
 // deduplicate files uploaded twice: Keep only the latest report for each unique context & measurement date
@@ -896,33 +893,25 @@ window.addEventListener('DOMContentLoaded', () => {
     // Load initial data
     loadData();
     
-    // Toggle Theme Selector dropdown menu
-    const themeBtn = document.getElementById('theme-btn');
-    const themeMenu = document.getElementById('theme-menu');
-    
-    themeBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        themeMenu.classList.toggle('open');
-    });
-    
-    document.addEventListener('click', () => {
-        themeMenu.classList.remove('open');
-    });
-    
-    document.querySelectorAll('.theme-menu-option').forEach(opt => {
-        opt.addEventListener('click', () => {
-            const theme = opt.getAttribute('data-theme');
-            selectTheme(theme);
-        });
-    });
+    // Bind Theme Toggle Button Click
+    const toggleBtn = document.getElementById('theme-toggle-btn');
+    if (toggleBtn) {
+        toggleBtn.addEventListener('click', toggleTheme);
+    }
     
     // Refresh Button Click
-    document.getElementById('refresh-btn').addEventListener('click', () => {
-        loadData();
-    });
+    const refreshBtn = document.getElementById('refresh-btn');
+    if (refreshBtn) {
+        refreshBtn.addEventListener('click', () => {
+            loadData();
+        });
+    }
     
     // Search Box Input
-    document.getElementById('search-box').addEventListener('input', () => {
-        filterTable();
-    });
+    const searchBox = document.getElementById('search-box');
+    if (searchBox) {
+        searchBox.addEventListener('input', () => {
+            filterTable();
+        });
+    }
 });
