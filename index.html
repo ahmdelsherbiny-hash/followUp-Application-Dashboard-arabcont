@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl" data-theme="corporate">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>لوحة مؤشرات تطبيق المتابعة - المقاولون العرب</title>
+    <link rel="icon" href="arab_contractors_logo.png" type="image/png">
+    
+    <!-- External CSS Libraries via CDN -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/lipis/flag-icons@6.6.6/css/flag-icons.min.css">
+    
+    <!-- Custom Style Sheet -->
+    <link rel="stylesheet" href="style.css">
+    
+    <!-- Chart.js library via CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+
+    <!-- Real-time Loading Overlay -->
+    <div class="dashboard-loader-overlay" id="loader-overlay">
+        <div class="spinner"></div>
+        <div class="loader-text">جاري الاتصال بقاعدة البيانات وجلب البيانات الحية...</div>
+    </div>
+
+    <!-- Main Dashboard Container -->
+    <div class="dashboard-container">
+        
+        <header>
+            <div class="brand-section">
+                <div class="title-text">
+                    <h1>لوحة مؤشرات المشروعات الحية</h1>
+                    <p>Follow-up Application Real-time Monitor</p>
+                </div>
+            </div>
+            
+            <div class="logo-wrapper">
+                <img src="arab_contractors_logo.png" alt="شعار المقاولون العرب">
+            </div>
+            
+            <div class="header-controls">
+                <!-- Sync / Real-time Status Badge -->
+                <div class="sync-status-badge">
+                    <div class="pulse-dot" id="pulse-indicator"></div>
+                    <div class="sync-info">
+                        <strong id="status-text">متصل لحظياً بالخادم</strong>
+                        <span>التحديث القادم خلال <strong id="countdown-seconds" style="font-family: 'Outfit', sans-serif; color: var(--theme-accent);">30</strong> ثانية</span>
+                    </div>
+                </div>
+
+                <!-- Last updated timestamp -->
+                <div class="sync-status-badge" style="background: rgba(255, 255, 255, 0.03);">
+                    <div class="sync-info" style="text-align: center;">
+                        <span style="font-size: 11px;">آخر تحديث للبيانات</span>
+                        <strong id="last-updated" style="font-family: 'Outfit', sans-serif; font-size: 14px; color: var(--theme-accent);">-:-:-</strong>
+                    </div>
+                </div>
+                
+                <!-- Manual Sync Trigger -->
+                <button class="refresh-btn" id="refresh-btn" title="تحديث البيانات الآن">
+                    <i class="fa-solid fa-arrows-rotate"></i>
+                </button>
+                
+                <!-- Theme Dropdown Switcher -->
+                <div class="theme-dropdown">
+                    <button class="theme-select-btn" id="theme-btn">
+                        <i class="fa-solid fa-palette"></i>
+                        <span>تغيير المظهر</span>
+                    </button>
+                    <div class="theme-menu" id="theme-menu">
+                        <button class="theme-menu-option active" data-theme="corporate">
+                            <span>Corporate</span>
+                            <span class="theme-swatches-indicator">
+                                <i style="--c:#14213D"></i>
+                                <i style="--c:#424D63"></i>
+                                <i style="--c:#FCA311"></i>
+                            </span>
+                        </button>
+                        <button class="theme-menu-option" data-theme="emerald">
+                            <span>Emerald</span>
+                            <span class="theme-swatches-indicator">
+                                <i style="--c:#12372A"></i>
+                                <i style="--c:#3F7D6D"></i>
+                                <i style="--c:#F6C344"></i>
+                            </span>
+                        </button>
+                        <button class="theme-menu-option" data-theme="charcoal">
+                            <span>Charcoal</span>
+                            <span class="theme-swatches-indicator">
+                                <i style="--c:#171C24"></i>
+                                <i style="--c:#3E5062"></i>
+                                <i style="--c:#F4C04E"></i>
+                            </span>
+                        </button>
+                        <button class="theme-menu-option" data-theme="burgundy">
+                            <span>Burgundy</span>
+                            <span class="theme-swatches-indicator">
+                                <i style="--c:#401326"></i>
+                                <i style="--c:#7A3554"></i>
+                                <i style="--c:#F2C14E"></i>
+                            </span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- KPI Grid Section -->
+        <section class="kpi-grid">
+            
+            <!-- Uploads KPI -->
+            <div class="kpi-card">
+                <div class="kpi-card-header">
+                    <span class="kpi-title">إجمالي التحديثات المرفوعة</span>
+                    <div class="kpi-icon-wrapper">
+                        <i class="fa-solid fa-cloud-arrow-up"></i>
+                    </div>
+                </div>
+                <div class="kpi-value" id="kpi-uploads-val">0</div>
+                <div class="kpi-subtext" id="kpi-uploads-sub">0 مشروع | 0 فرع</div>
+            </div>
+
+            <!-- Change Requests KPI -->
+            <div class="kpi-card">
+                <div class="kpi-card-header">
+                    <span class="kpi-title">طلبات إضافة مشروعات</span>
+                    <div class="kpi-icon-wrapper">
+                        <i class="fa-solid fa-code-pull-request"></i>
+                    </div>
+                </div>
+                <div class="kpi-value" id="kpi-requests-val">0</div>
+                <div class="kpi-subtext" id="kpi-requests-sub">0 مقبول | 0 قيد الانتظار</div>
+            </div>
+
+            <!-- Active Coverage KPI -->
+            <div class="kpi-card">
+                <div class="kpi-card-header">
+                    <span class="kpi-title">نطاق التغطية النشط</span>
+                    <div class="kpi-icon-wrapper">
+                        <i class="fa-solid fa-folder-tree"></i>
+                    </div>
+                </div>
+                <div class="kpi-value" id="kpi-coverage-val">0</div>
+                <div class="kpi-subtext" id="kpi-coverage-sub">0 دولة | 0 قطاع وفروع</div>
+            </div>
+
+            <!-- Financial KPIs -->
+            <div class="kpi-card">
+                <div class="kpi-card-header">
+                    <span class="kpi-title">إجمالي القيمة التعاقدية (USD)</span>
+                    <div class="kpi-icon-wrapper">
+                        <i class="fa-solid fa-sack-dollar"></i>
+                    </div>
+                </div>
+                <div class="kpi-value" id="kpi-finance-val">$0.0M</div>
+                <div class="kpi-subtext" id="kpi-finance-sub" style="font-family: 'Outfit', sans-serif;">DZD: 0.0M | NGN: 0.0M</div>
+            </div>
+
+        </section>
+
+        <!-- Charts and Graphs Section -->
+        <section class="charts-grid">
+            
+            <!-- Left Chart: Timeline Activity -->
+            <div class="chart-card">
+                <div class="chart-card-header">
+                    <div class="chart-title">
+                        <h2>منحنى نشاط الرفع والمتابعة</h2>
+                        <p>توضيح لمعدل رفع التقارير اليومي خلال الفترة الأخيرة</p>
+                    </div>
+                </div>
+                <div class="chart-canvas-container">
+                    <canvas id="timelineChart"></canvas>
+                </div>
+            </div>
+            
+            <!-- Right Chart: Types & Country Distribution -->
+            <div class="chart-card" style="display: flex; flex-direction: column; justify-content: space-between;">
+                <div class="chart-card-header">
+                    <div class="chart-title">
+                        <h2>توزيع التقارير حسب الدول</h2>
+                        <p>حجم التحديثات والمشروعات في كل دولة</p>
+                    </div>
+                </div>
+                <!-- Country breakdown custom sidebar list -->
+                <div class="countries-list" id="countries-list">
+                    <!-- Dynamic Country rows will be injected here -->
+                </div>
+                
+                <!-- Quick breakdown Chart of Report Type -->
+                <div class="chart-canvas-container" style="height: 140px; margin-top: 15px;">
+                    <canvas id="reportTypeChart"></canvas>
+                </div>
+            </div>
+
+        </section>
+
+        <!-- Data Table Panel (Recent uploads and requests log) -->
+        <section class="data-table-panel">
+            <div class="panel-header-tabs">
+                <div class="tabs-list">
+                    <button class="tab-btn active" onclick="switchTab('tab-recent-reports', this)">
+                        <i class="fa-solid fa-list-check"></i>
+                        أحدث التحديثات والتقارير المرفوعة
+                    </button>
+                    <button class="tab-btn" onclick="switchTab('tab-change-requests', this)">
+                        <i class="fa-solid fa-circle-question"></i>
+                        طلبات إضافة المشاريع الجديدة
+                    </button>
+                </div>
+                
+                <div class="search-filter-wrapper">
+                    <!-- Search Input -->
+                    <div class="search-input-container">
+                        <i class="fa-solid fa-magnifying-glass"></i>
+                        <input type="text" id="search-box" placeholder="بحث باسم المشروع، الفرع، الدولة...">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tab Content 1: Recent Reports -->
+            <div class="tab-content active" id="tab-recent-reports">
+                <div class="data-grid-container">
+                    <table class="data-grid">
+                        <thead>
+                            <tr>
+                                <th style="width: 15%;">تاريخ الرفع</th>
+                                <th style="width: 15%;">الدولة</th>
+                                <th style="width: 20%;">الفرع / القطاع</th>
+                                <th style="width: 25%;">اسم المشروع / نوع التقرير</th>
+                                <th style="width: 12%;">العميل</th>
+                                <th style="width: 10%;">قيمة المشروع</th>
+                                <th style="width: 8%;">جهاز الرفع</th>
+                            </tr>
+                        </thead>
+                        <tbody id="recent-uploads-body">
+                            <!-- Dynamic report rows will be injected here -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Tab Content 2: Change Requests -->
+            <div class="tab-content" id="tab-change-requests">
+                <div class="data-grid-container">
+                    <table class="data-grid">
+                        <thead>
+                            <tr>
+                                <th style="width: 15%;">تاريخ الطلب</th>
+                                <th style="width: 15%;">الدولة</th>
+                                <th style="width: 20%;">الفرع</th>
+                                <th style="width: 25%;">المشروع المقترح</th>
+                                <th style="width: 15%;">اسم العميل</th>
+                                <th style="width: 10%;">حالة الطلب</th>
+                            </tr>
+                        </thead>
+                        <tbody id="change-requests-body">
+                            <!-- Dynamic request rows will be injected here -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            
+        </section>
+
+    </div>
+
+    <!-- Core Javascript Logic -->
+    <script src="dashboard.js"></script>
+</body>
+</html>
