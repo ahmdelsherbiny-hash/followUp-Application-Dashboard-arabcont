@@ -15,22 +15,40 @@ html[data-theme="corporate"] {
     --text-muted: #A0AEC0;
     --border-color: rgba(255, 255, 255, 0.12);
     --glass-bg: rgba(26, 41, 76, 0.6);
+    
+    /* Semantic variables for dark mode */
+    --table-header-bg: rgba(255, 255, 255, 0.02);
+    --table-hover-bg: rgba(255, 255, 255, 0.015);
+    --card-inner-bg: rgba(0, 0, 0, 0.2);
+    --badge-bg: rgba(0, 0, 0, 0.3);
+    --modal-overlay-bg: rgba(10, 17, 30, 0.85);
+    --input-bg: rgba(0, 0, 0, 0.25);
+    --scrollbar-thumb-bg: rgba(255, 255, 255, 0.15);
 }
 
 html[data-theme="aegov"] {
-    --theme-deep: #0B0E14;
-    --theme-mid: #161A23;
-    --theme-soft: #2E3748;
-    --theme-panel: #161A23;
-    --theme-surface: #F8FAFC;
-    --theme-accent: #C59B27;
+    --theme-deep: #FFFFFF;          /* Clean white background */
+    --theme-mid: #F1F5F9;           /* Light grayish-blue */
+    --theme-soft: #E2E8F0;          /* Subtle borders/dividers */
+    --theme-panel: #F8FAFC;         /* Light slate panel background */
+    --theme-surface: #0F172A;
+    --theme-accent: #C59B27;        /* AEGold brand gold */
     --theme-accent-strong: #A37E1C;
     --theme-accent-rgb: 197, 155, 39;
     --theme-muted: #64748B;
-    --text-primary: #FFFFFF;
-    --text-muted: #94A3B8;
-    --border-color: rgba(197, 155, 39, 0.18);
-    --glass-bg: rgba(22, 26, 35, 0.65);
+    --text-primary: #0F172A;        /* Dark slate for high readability */
+    --text-muted: #475569;          /* Slate gray for secondary text */
+    --border-color: rgba(197, 155, 39, 0.28); /* Warm gold borders */
+    --glass-bg: rgba(255, 255, 255, 0.95);
+    
+    /* Semantic variables for light mode */
+    --table-header-bg: rgba(0, 0, 0, 0.04);
+    --table-hover-bg: rgba(0, 0, 0, 0.02);
+    --card-inner-bg: #FFFFFF;
+    --badge-bg: rgba(197, 155, 39, 0.08);
+    --modal-overlay-bg: rgba(15, 23, 42, 0.4);
+    --input-bg: #FFFFFF;
+    --scrollbar-thumb-bg: rgba(197, 155, 39, 0.3);
 }
 
 * {
@@ -588,9 +606,9 @@ header {
 .data-grid-container {
     overflow-x: auto;
     max-height: 400px;
-    border: 1px solid rgba(255, 255, 255, 0.06);
+    border: 1px solid var(--border-color);
     border-radius: 12px;
-    background: rgba(0, 0, 0, 0.12);
+    background: var(--card-inner-bg);
 }
 
 .data-grid {
@@ -601,11 +619,11 @@ header {
 }
 
 .data-grid th {
-    background: rgba(0, 0, 0, 0.3);
+    background: var(--table-header-bg);
     color: var(--text-primary);
     padding: 14px 16px;
     font-weight: 700;
-    border-bottom: 2px solid rgba(255, 255, 255, 0.08);
+    border-bottom: 2px solid var(--border-color);
     position: sticky;
     top: 0;
     z-index: 10;
@@ -613,8 +631,8 @@ header {
 
 .data-grid td {
     padding: 12px 16px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-    color: rgba(255, 255, 255, 0.88);
+    border-bottom: 1px solid var(--border-color);
+    color: var(--text-primary);
     vertical-align: middle;
 }
 
@@ -627,7 +645,7 @@ header {
 }
 
 .data-grid tbody tr:hover {
-    background-color: rgba(255, 255, 255, 0.03);
+    background-color: var(--table-hover-bg);
 }
 
 /* Badge Status in Tables */
@@ -925,9 +943,9 @@ header {
 .modal-table-container {
     flex: 1;
     overflow-y: auto;
-    background: rgba(0, 0, 0, 0.2);
+    background: var(--card-inner-bg);
     border-radius: 12px;
-    border: 1px solid rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--border-color);
 }
 
 .modal-data-table {
@@ -939,10 +957,10 @@ header {
 
 .modal-data-table th {
     padding: 10px 12px;
-    background: rgba(255, 255, 255, 0.02);
+    background: var(--table-header-bg);
     color: var(--text-muted);
     font-weight: 700;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    border-bottom: 1px solid var(--border-color);
     position: sticky;
     top: 0;
     z-index: 10;
@@ -950,12 +968,12 @@ header {
 
 .modal-data-table td {
     padding: 10px 12px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.02);
-    color: #E2E8F0;
+    border-bottom: 1px solid var(--border-color);
+    color: var(--text-primary);
 }
 
 .modal-data-table tr:hover td {
-    background: rgba(255, 255, 255, 0.01);
+    background: var(--table-hover-bg);
 }
 
 /* Modal responsive */
