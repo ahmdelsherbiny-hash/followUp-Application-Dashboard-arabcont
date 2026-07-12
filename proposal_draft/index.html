@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl" data-theme="corporate">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>لوحة متابعة مشروعات المقاولون العرب</title>
+    
+    <!-- Google Fonts: Tajawal for Arabic, Outfit for English numerals -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;800&family=Tajawal:wght@400;700;900&display=swap" rel="stylesheet">
+    
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Flag Icons for countries -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/lipis/flag-icons@6.6.6/css/flag-icons.min.css">
+    
+    <!-- Chart.js for data visualization -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <!-- Custom CSS Stylesheet -->
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <!-- Real-time Loading Overlay -->
+    <div class="dashboard-loader-overlay" id="loader-overlay">
+        <div class="spinner"></div>
+        <div class="loader-text">جاري الاتصال بقاعدة البيانات وجلب البيانات الحية...</div>
+    </div>
+
+    <!-- Main Dashboard Container -->
+    <div class="dashboard-container">
+        
+        <!-- Header -->
+        <header>
+            <div class="brand-section">
+                <div class="title-text">
+                    <h1>لوحة مؤشرات المشروعات الحية</h1>
+                    <p>Follow-up Application Real-time Monitor</p>
+                </div>
+            </div>
+            
+            <div class="logo-wrapper">
+                <img src="arab_contractors_logo.png" alt="شعار المقاولون العرب">
+            </div>
+            
+            <div class="header-controls">
+                <!-- Sync / Real-time Status Badge -->
+                <div class="sync-status-badge">
+                    <div class="pulse-dot" id="pulse-indicator"></div>
+                    <div class="sync-info">
+                        <strong id="status-text">متصل لحظياً بالخادم</strong>
+                        <span>التحديث القادم خلال <strong id="countdown-seconds" style="font-family: 'Outfit', sans-serif; color: var(--theme-accent);">30</strong> ثانية</span>
+                    </div>
+                </div>
+
+                <!-- Last updated timestamp -->
+                <div class="sync-status-badge" style="background: rgba(255, 255, 255, 0.03);">
+                    <div class="sync-info" style="text-align: center;">
+                        <span style="font-size: 11px;">آخر تحديث للبيانات</span>
+                        <strong id="last-updated" style="font-family: 'Outfit', sans-serif; font-size: 14px; color: var(--theme-accent);">-:-:-</strong>
+                    </div>
+                </div>
+                
+                <!-- Manual Sync Trigger -->
+                <button class="refresh-btn" id="refresh-btn" title="تحديث البيانات الآن">
+                    <i class="fa-solid fa-arrows-rotate"></i>
+                </button>
+            </div>
+        </header>
+
+        <!-- KPI Grid Section (3 Columns) -->
+        <section class="kpi-grid">
+            
+            <!-- Uploads KPI -->
+            <div class="kpi-card">
+                <div class="kpi-card-header">
+                    <span class="kpi-title">إجمالي التحديثات المرفوعة</span>
+                    <div class="kpi-icon-wrapper">
+                        <i class="fa-solid fa-cloud-arrow-up"></i>
+                    </div>
+                </div>
+                <div class="kpi-value" id="kpi-uploads-val">0</div>
+                <div class="kpi-subtext" id="kpi-uploads-sub">0 مشروع | 0 فرع</div>
+            </div>
+
+            <!-- Change Requests KPI -->
+            <div class="kpi-card">
+                <div class="kpi-card-header">
+                    <span class="kpi-title">طلبات إضافة مشروعات</span>
+                    <div class="kpi-icon-wrapper">
+                        <i class="fa-solid fa-code-pull-request"></i>
+                    </div>
+                </div>
+                <div class="kpi-value" id="kpi-requests-val">0</div>
+                <div class="kpi-subtext" id="kpi-requests-sub">0 مقبول | 0 قيد الانتظار</div>
+            </div>
+
+            <!-- Active Coverage KPI -->
+            <div class="kpi-card">
+                <div class="kpi-card-header">
+                    <span class="kpi-title">نطاق التغطية النشط</span>
+                    <div class="kpi-icon-wrapper">
+                        <i class="fa-solid fa-folder-tree"></i>
+                    </div>
+                </div>
+                <div class="kpi-value" id="kpi-coverage-val">0</div>
+                <div class="kpi-subtext" id="kpi-coverage-sub">0 دولة | 0 قطاع وفروع</div>
+            </div>
+
+        </section>
+
+        <!-- Main Navigation Tabs -->
+        <div class="main-nav-tabs">
+            <button class="nav-tab-btn active" id="tab-btn-reporting" onclick="switchMainTab('tab-reporting-kpis', this)">
+                <i class="fa-solid fa-chart-pie"></i>
+                <span>الإرسال الشهري والالتزام</span>
+            </button>
+            <button class="nav-tab-btn" id="tab-btn-management" onclick="switchMainTab('tab-management-kpis', this)">
+                <i class="fa-solid fa-ranking-star"></i>
+                <span>أداء المشاريع والفروع (الإدارة العليا)</span>
+            </button>
+            <button class="nav-tab-btn" id="tab-btn-browser" onclick="switchMainTab('tab-project-browser', this)">
+                <i class="fa-solid fa-folder-tree"></i>
+                <span>متصفح المشاريع الهرمي ومؤشر المخاطر</span>
+            </button>
+        </div>
+
+        <!-- TAB 1: Monthly Reporting Upload KPIs -->
+        <div class="main-tab-content active" id="tab-reporting-kpis">
+            
+            <!-- Cycle Details Banner -->
+            <div class="cycle-banner">
+                <div class="cycle-title-section">
+                    <i class="fa-solid fa-calendar-check"></i>
+                    <div>
+                        <h2 id="active-month-title">دورة المتابعة الحالية: جاري الحساب...</h2>
+                        <p>يتم احتساب التقرير بناءً على وقت إرساله الفعلي (Timestamp) مع تصفير العداد تلقائياً عند اكتمال التقارير 100%.</p>
+                    </div>
+                </div>
+                <div class="cycle-badge" id="cycle-status-badge">دورة نشطة</div>
+            </div>
+
+            <!-- Circular Progress Dials Section -->
+            <div class="dials-row">
+                <div class="dial-card">
+                    <div class="dial-container">
+                        <svg class="progress-ring" width="140" height="140">
+                            <circle class="progress-ring-bg" stroke="rgba(255,255,255,0.05)" stroke-width="12" fill="transparent" r="58" cx="70" cy="70"/>
+                            <circle class="progress-ring-circle" id="proj-progress-circle" stroke="var(--theme-accent)" stroke-width="12" fill="transparent" r="58" cx="70" cy="70" stroke-dasharray="364.42" stroke-dashoffset="364.42"/>
+                        </svg>
+                        <div class="dial-percent" id="proj-progress-percent">0%</div>
+                    </div>
+                    <div class="dial-label">
+                        <h3>نسبة التزام المشروعات</h3>
+                        <p id="proj-progress-numbers">0 من 0 مشروع</p>
+                    </div>
+                </div>
+
+                <div class="dial-card">
+                    <div class="dial-container">
+                        <svg class="progress-ring" width="140" height="140">
+                            <circle class="progress-ring-bg" stroke="rgba(255,255,255,0.05)" stroke-width="12" fill="transparent" r="58" cx="70" cy="70"/>
+                            <circle class="progress-ring-circle" id="branch-progress-circle" stroke="#3B82F6" stroke-width="12" fill="transparent" r="58" cx="70" cy="70" stroke-dasharray="364.42" stroke-dashoffset="364.42"/>
+                        </svg>
+                        <div class="dial-percent" id="branch-progress-percent">0%</div>
+                    </div>
+                    <div class="dial-label">
+                        <h3>نسبة التزام الفروع والشركات</h3>
+                        <p id="branch-progress-numbers">0 من 0 فرع</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Two-Column Grid: Submitted vs Late/Pending lists -->
+            <div class="compliance-grid">
+                
+                <!-- Left: Submitted List -->
+                <div class="compliance-card success-glow">
+                    <div class="compliance-header">
+                        <div class="compliance-title">
+                            <i class="fa-solid fa-circle-check text-success"></i>
+                            <span>التقارير التي تم استلامها لهذا الشهر</span>
+                        </div>
+                        <span class="compliance-count-badge success" id="submitted-count">0</span>
+                    </div>
+                    <div class="compliance-list-container">
+                        <table class="compliance-table">
+                            <thead>
+                                <tr>
+                                    <th>الاسم</th>
+                                    <th>التصنيف</th>
+                                    <th>الدولة</th>
+                                    <th>وقت الإرسال</th>
+                                </tr>
+                            </thead>
+                            <tbody id="submitted-list-body">
+                                <!-- Dynamic rows -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Right: Late/Pending List -->
+                <div class="compliance-card alert-glow">
+                    <div class="compliance-header">
+                        <div class="compliance-title">
+                            <i class="fa-solid fa-circle-exclamation text-alert"></i>
+                            <span>المتأخرون عن إرسال التقرير</span>
+                        </div>
+                        <span class="compliance-count-badge alert" id="late-count">0</span>
+                    </div>
+                    <div class="compliance-list-container">
+                        <table class="compliance-table">
+                            <thead>
+                                <tr>
+                                    <th>الاسم المتأخر</th>
+                                    <th>التصنيف</th>
+                                    <th>الدولة</th>
+                                    <th>الحالة</th>
+                                </tr>
+                            </thead>
+                            <tbody id="late-list-body">
+                                <!-- Dynamic rows -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+            </div>
+
+        </div>
+
+        <!-- TAB 2: Top Management KPIs & Performance -->
+        <div class="main-tab-content" id="tab-management-kpis">
+            
+            <!-- Elite Status Indicator Banner -->
+            <div class="elite-banner" id="elite-indicator">
+                <div class="elite-status-icon" id="elite-status-icon">
+                    <i class="fa-solid fa-shield-halved"></i>
+                </div>
+                <div class="elite-status-details">
+                    <h2 id="elite-status-title">حالة المحفظة: جاري الحساب...</h2>
+                    <p id="elite-status-desc">مؤشر بصري ذكي لتقييم أداء المحفظة الاستثمارية والمشروعات الخارجية بدون أرقام معقدة.</p>
+                </div>
+            </div>
+
+            <!-- Smooth CSS Scrolling Stock Ticker -->
+            <div class="ticker-wrap">
+                <div class="ticker-label">تحديثات الأداء المقارن:</div>
+                <div class="ticker" id="ticker-content">
+                    <!-- Dynamic scrolling items comparing current vs previous month -->
+                    <span class="ticker-item">جاري توليد شريط أسعار الأداء للمشروعات...</span>
+                </div>
+            </div>
+
+            <!-- Management Performance Grid -->
+            <div class="management-grid-card">
+                <div class="management-grid-header">
+                    <div class="grid-title-info">
+                        <h2>موقف أداء المشاريع والفروع الحية</h2>
+                        <p>يعرض نسب الإنجاز وقيم الأرباح والخسائر ومؤشر الحالة السريع للإدارة العليا</p>
+                    </div>
+                    
+                    <div class="grid-search-container">
+                        <i class="fa-solid fa-magnifying-glass"></i>
+                        <input type="text" id="management-search" placeholder="بحث سريع في المشاريع والفروع...">
+                    </div>
+                </div>
+                
+                <div class="management-table-container">
+                    <table class="management-table">
+                        <thead>
+                            <tr>
+                                <th>الجهة / المشروع</th>
+                                <th>النوع</th>
+                                <th>الدولة</th>
+                                <th>نسبة الإنجاز المخططة</th>
+                                <th>صافي الربح / الخسارة</th>
+                                <th>مؤشر الحالة السريع</th>
+                            </tr>
+                        </thead>
+                        <tbody id="management-grid-body">
+                            <!-- Dynamic performance rows -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- TAB 3: Hierarchical Browser & Risk Index -->
+        <div class="main-tab-content" id="tab-project-browser">
+            
+            <!-- Symmetrical Hierarchical Selectors -->
+            <div class="selector-card">
+                <h3 class="selector-card-title"><i class="fa-solid fa-filter"></i> التصفح الهرمي للمشروعات والفروع</h3>
+                <div class="selectors-row">
+                    <div class="selector-group">
+                        <label for="select-country">اختر الدولة</label>
+                        <select id="select-country" class="custom-select">
+                            <option value="">-- اختر دولة --</option>
+                        </select>
+                    </div>
+                    <div class="selector-group">
+                        <label for="select-branch">اختر الفرع / الشركة</label>
+                        <select id="select-branch" class="custom-select" disabled>
+                            <option value="">-- اختر فرع --</option>
+                        </select>
+                    </div>
+                    <div class="selector-group">
+                        <label for="select-project">اختر المشروع</label>
+                        <select id="select-project" class="custom-select" disabled>
+                            <option value="">-- اختر مشروع --</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Empty State / Selector prompt -->
+            <div class="browser-empty-state" id="browser-empty-prompt">
+                <i class="fa-solid fa-folder-open"></i>
+                <h2>يرجى اختيار مشروع أو فرع من القائمة الهرمية في الأعلى</h2>
+                <p>قم باختيار الدولة ثم الفرع ثم المشروع لعرض تحليلات الأداء التفصيلية، ومؤشرات المخاطر، والرسوم البيانية المخصصة.</p>
+            </div>
+
+            <!-- Project/Branch Profile Container -->
+            <div class="browser-profile-container hidden" id="browser-profile-container">
+                
+                <!-- Symmetrical detail headers -->
+                <div class="profile-header-card" id="profile-header-card">
+                    <div class="profile-header-main">
+                        <div>
+                            <span class="profile-badge" id="profile-badge-type">تقرير مشروع</span>
+                            <h2 id="profile-title-name">اسم المشروع</h2>
+                            <p id="profile-subtitle-client"><i class="fa-solid fa-building-user"></i> العميل: أمانة محافظة جدة</p>
+                        </div>
+                        
+                        <!-- Glowing Risk Indicator Badge -->
+                        <div class="risk-indicator-box" id="risk-box">
+                            <span class="risk-label">مؤشر المخاطر</span>
+                            <div class="risk-badge" id="risk-badge-val">منخفضة (20%)</div>
+                        </div>
+                    </div>
+
+                    <div class="profile-details-grid">
+                        <div class="profile-detail-item">
+                            <span class="detail-label">الدولة</span>
+                            <strong class="detail-value" id="profile-country">-</strong>
+                        </div>
+                        <div class="profile-detail-item">
+                            <span class="detail-label">الفرع / القطاع</span>
+                            <strong class="detail-value" id="profile-branch">-</strong>
+                        </div>
+                        <div class="profile-detail-item">
+                            <span class="detail-label">نسبة الإنجاز المخططة</span>
+                            <strong class="detail-value" id="profile-progress" style="color: var(--theme-accent);">-</strong>
+                        </div>
+                        <div class="profile-detail-item">
+                            <span class="detail-label">صافي الربح أو الخسارة</span>
+                            <strong class="detail-value" id="profile-pnl">-</strong>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Interactive Charts Row -->
+                <div class="profile-charts-row">
+                    <!-- Financial Pie Chart -->
+                    <div class="profile-chart-card">
+                        <div class="profile-chart-header">
+                            <h3><i class="fa-solid fa-chart-pie"></i> الهيكل المالي للمشروع</h3>
+                            <p>توزيع القيمة التعاقدية مقابل المنفذ الفعلي وصافي الربح/الخسارة</p>
+                        </div>
+                        <div class="profile-chart-canvas">
+                            <canvas id="profilePieChart"></canvas>
+                        </div>
+                    </div>
+
+                    <!-- Progress Histogram -->
+                    <div class="profile-chart-card">
+                        <div class="profile-chart-header">
+                            <h3><i class="fa-solid fa-chart-column"></i> تتبع نسب الإنجاز التاريخية</h3>
+                            <p>المدرج التكراري لتطور نسب الإنجاز المخطط لها عبر الشهور السابقة</p>
+                        </div>
+                        <div class="profile-chart-canvas">
+                            <canvas id="profileHistoChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+
+        </div>
+
+    </div>
+
+    <!-- Core Javascript Logic -->
+    <script src="dashboard.js"></script>
+</body>
+</html>

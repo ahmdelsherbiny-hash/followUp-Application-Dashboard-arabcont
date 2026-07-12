@@ -16,20 +16,10 @@ let projectToCountryMap = {};
 let syncTimer = null;
 let secondsRemaining = REFRESH_INTERVAL_SECONDS;
 
-// Chart references
-let profilePieChart = null;
-let profileHistoChart = null;
-
-// Safe DOM Setters to prevent script crashes on caching or mismatched layouts
-function setTxt(id, val) {
-    const el = document.getElementById(id);
-    if (el) el.innerText = val;
-}
-
-function setHtml(id, val) {
-    const el = document.getElementById(id);
-    if (el) el.innerHTML = val;
-}
+// Chart references for dynamic updates
+let typeChart = null;
+let countryChart = null;
+let timelineChart = null;
 
 // JSONP Script Loader to bypass CORS issues on local files (file:/// URL)
 function fetchSheetJSONP(sheetName) {
@@ -71,6 +61,7 @@ function parseGvizReports(table) {
     
     const cols = table.cols;
     
+    // Check if the first row contains headers
     const firstRowCells = table.rows[0].c;
     const firstRowValues = firstRowCells ? firstRowCells.map(cell => cell ? String(cell.v).toLowerCase().trim() : '') : [];
     
@@ -79,12 +70,13 @@ function parseGvizReports(table) {
     const getIndex = (key) => {
         const k = key.toLowerCase().trim();
         
+        // Fallback to row 0 if it is a header row
         if (isFirstRowHeader) {
             return firstRowValues.indexOf(k);
         }
         
+        // Otherwise, search inside cols labels
         return cols.findIndex(col => {
-            if (!col || !col.label) return false;
             const label = col.label.toLowerCase().trim();
             if (label === k) return true;
             if (label.includes(k)) {
@@ -107,15 +99,9 @@ function parseGvizReports(table) {
     const projNameIdx = getIndex('q1');
     const dateIdx = getIndex('q2');
     const clientIdx = getIndex('q3');
-    
-    // Key KPIs Column Indices
-    const valIdx = getIndex('q14'); // contractValue (local)
-    const valUsdIdx = getIndex('q18'); // valueUsd
-    const curIdx = getIndex('q16'); // currency
-    const q32Idx = getIndex('q32'); // Project P&L
-    const q132Idx = getIndex('q1.32'); // Branch P&L
-    const q24Idx = getIndex('q24'); // Project planned progress %
-    const q20Idx = getIndex('q20'); // Executed Value (Billed)
+    const valIdx = getIndex('q14');
+    const curIdx = getIndex('q16');
+    const valUsdIdx = getIndex('q18');
     
     const results = [];
     const startIndex = isFirstRowHeader ? 1 : 0;
@@ -135,19 +121,15 @@ function parseGvizReports(table) {
             return cell ? (cell.f || String(cell.v || '')) : '';
         };
         
+        // Skip sheet key header row if it slips in
         const tsVal = cellVal(tsIndex);
         if (tsVal && String(tsVal).trim().toLowerCase() === 'timestamp') {
             return;
         }
         
         const pId = cellVal(projIdIdx) ? String(cellVal(projIdIdx)).trim() : '';
-        const isProject = !!(pId && pId !== '');
-        
         const usdVal = parseFloat(cellVal(valUsdIdx)) || 0;
         const localVal = parseFloat(cellVal(valIdx)) || 0;
-        const pnlVal = isProject ? (parseFloat(cellVal(q32Idx)) || 0) : (parseFloat(cellVal(q132Idx)) || 0);
-        const progressVal = isProject ? (parseFloat(cellVal(q24Idx)) || 0) : 0;
-        const executedVal = isProject ? (parseFloat(cellVal(q20Idx)) || 0) : 0;
         
         results.push({
             timestamp: cellVal(tsIndex) || '',
@@ -162,28 +144,27 @@ function parseGvizReports(table) {
             contractValue: localVal,
             currency: cellVal(curIdx) || '',
             valueUsd: usdVal,
-            isProjectReport: isProject,
-            pnl: pnlVal,
-            progress: progressVal,
-            executedValue: executedVal
+            isProjectReport: !!(pId && pId !== '')
         });
     });
     
     return results;
 }
 
-// Parse Change Requests
+// Parse Change Requests from Google Sheets JSON response format (with first-row headers fallback)
 function parseChangeRequestsGviz(table) {
     if (!table || !table.cols || !table.rows || table.rows.length === 0) return [];
     
-    let headers = table.cols.map(col => col && col.label ? col.label.toLowerCase().trim() : '');
+    let headers = table.cols.map(col => col.label ? col.label.toLowerCase().trim() : '');
+    
+    // Check if the first row contains headers
     const firstRowCells = table.rows[0].c;
     const firstRowValues = firstRowCells ? firstRowCells.map(cell => cell ? String(cell.v).toLowerCase().trim() : '') : [];
     
     let startIndex = 0;
     if (firstRowValues.includes('request id')) {
         headers = firstRowValues;
-        startIndex = 1;
+        startIndex = 1; // Skip header row
     }
     
     const getIndex = (key) => headers.indexOf(key.toLowerCase().trim());
@@ -226,18 +207,20 @@ function parseChangeRequestsGviz(table) {
     return results;
 }
 
-// Parse UUIDs Registry
+// Parse UUIDs Registry from Google Sheets JSON response format (with first-row headers fallback)
 function parseUUIDsGviz(table) {
     if (!table || !table.cols || !table.rows || table.rows.length === 0) return [];
     
-    let headers = table.cols.map(col => col && col.label ? col.label.toLowerCase().trim() : '');
+    let headers = table.cols.map(col => col.label ? col.label.toLowerCase().trim() : '');
+    
+    // Check if the first row contains headers
     const firstRowCells = table.rows[0].c;
     const firstRowValues = firstRowCells ? firstRowCells.map(cell => cell ? String(cell.v).toLowerCase().trim() : '') : [];
     
     let startIndex = 0;
     if (firstRowValues.includes('uuid') && firstRowValues.includes('submittal count')) {
         headers = firstRowValues;
-        startIndex = 1;
+        startIndex = 1; // Skip header row
     }
     
     const getIndex = (key) => headers.indexOf(key.toLowerCase().trim());
@@ -272,6 +255,452 @@ function parseUUIDsGviz(table) {
         });
     });
     return results;
+}
+
+// Format financial value in USD
+function formatCurrencyUSD(value) {
+    if (value >= 1e6) {
+        return `$${(value / 1e6).toFixed(2)}M`;
+    } else if (value >= 1e3) {
+        return `$${(value / 1e3).toFixed(1)}K`;
+    }
+    return `$${value.toFixed(2)}`;
+}
+
+// Setup and Fetch Data
+async function loadData() {
+    try {
+        const loader = document.getElementById('loader-overlay');
+        if (loader) loader.classList.remove('hidden');
+        
+        // Fetch 4 tabs in parallel via JSONP (fully CORS-safe!)
+        const [reportsTable, requestsTable, uuidsTable, ddTable] = await Promise.all([
+            fetchSheetJSONP('master output database'),
+            fetchSheetJSONP('change request'),
+            fetchSheetJSONP('UUIDs'),
+            fetchSheetJSONP('dd_lst')
+        ]);
+        
+        // Parse registries first
+        parseDropdownRegistry(ddTable);
+        
+        // Parse table objects
+        const rawReports = parseGvizReports(reportsTable);
+        reportsData = deduplicateReports(rawReports);
+        changeRequestsData = parseChangeRequestsGviz(requestsTable);
+        uuidsData = parseUUIDsGviz(uuidsTable);
+        
+        // Update dashboard elements
+        updateKPIs();
+        renderCharts();
+        populateTables();
+        
+        // Update connection status
+        const pulse = document.getElementById('pulse-indicator');
+        if (pulse) pulse.classList.remove('error');
+        const statusText = document.getElementById('status-text');
+        if (statusText) statusText.innerText = 'متصل لحظياً بالخادم';
+        
+        const now = new Date();
+        const lastUpdated = document.getElementById('last-updated');
+        if (lastUpdated) lastUpdated.innerText = now.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        
+        if (loader) loader.classList.add('hidden');
+        resetTimer();
+    } catch (error) {
+        console.error("Dashboard error:", error);
+        const pulse = document.getElementById('pulse-indicator');
+        if (pulse) pulse.classList.add('error');
+        const statusText = document.getElementById('status-text');
+        if (statusText) statusText.innerText = 'فشل الاتصال بالخادم';
+        
+        const loader = document.getElementById('loader-overlay');
+        if (loader) loader.classList.add('hidden');
+        resetTimer();
+    }
+}
+
+// Calculate and update KPIs in UI
+function updateKPIs() {
+    const totalUploads = reportsData.length;
+    const projectReports = reportsData.filter(r => r.isProjectReport).length;
+    const branchReports = reportsData.filter(r => !r.isProjectReport).length;
+    
+    // Uploads Card
+    const uploadsVal = document.getElementById('kpi-uploads-val');
+    if (uploadsVal) uploadsVal.innerText = totalUploads;
+    const uploadsSub = document.getElementById('kpi-uploads-sub');
+    if (uploadsSub) uploadsSub.innerHTML = `<span>${projectReports}</span> مشروع | <span>${branchReports}</span> فرع`;
+    
+    // Change Requests Card
+    const totalRequests = changeRequestsData.length;
+    const approvedRequests = changeRequestsData.filter(req => req.status === 'approved' || req.newProjectId).length;
+    const pendingRequests = totalRequests - changeRequestsData.filter(req => req.status === 'denied').length - approvedRequests;
+    const requestsVal = document.getElementById('kpi-requests-val');
+    if (requestsVal) requestsVal.innerText = totalRequests;
+    const requestsSub = document.getElementById('kpi-requests-sub');
+    if (requestsSub) requestsSub.innerHTML = `<span>${approvedRequests}</span> مقبول | <span>${pendingRequests}</span> قيد الانتظار`;
+    
+    // Coverage & Traffic
+    const activeCountries = new Set(reportsData.map(r => r.country).filter(Boolean)).size;
+    const uniqueProjects = new Set(reportsData.map(r => r.projectName).filter(Boolean)).size;
+    const coverageVal = document.getElementById('kpi-coverage-val');
+    if (coverageVal) coverageVal.innerText = uniqueProjects;
+    const coverageSub = document.getElementById('kpi-coverage-sub');
+    if (coverageSub) coverageSub.innerHTML = `<span>${activeCountries}</span> دولة | <span>${expectedBranches.size}</span> قطاعات وفروع`;
+    
+    // Calculate Project and Branch commitment rates
+    const reportsByMonth = {};
+    reportsData.forEach(r => {
+        const d = new Date(r.timestamp);
+        if (isNaN(d.getTime())) return;
+        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        if (!reportsByMonth[key]) {
+            reportsByMonth[key] = { projects: new Set(), branches: new Set(), raw: [] };
+        }
+        reportsByMonth[key].raw.push(r);
+        if (r.isProjectReport && r.projectName) {
+            if (expectedProjects.has(r.projectName)) {
+                reportsByMonth[key].projects.add(r.projectName);
+            }
+        } else if (!r.isProjectReport && r.branchName) {
+            if (expectedBranches.has(r.branchName)) {
+                reportsByMonth[key].branches.add(r.branchName);
+            }
+        }
+    });
+
+    const monthsList = Object.keys(reportsByMonth).sort();
+    let activeMonth = '';
+    if (monthsList.length === 0) {
+        const now = new Date();
+        activeMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    } else {
+        activeMonth = monthsList[monthsList.length - 1];
+    }
+
+    const activeData = reportsByMonth[activeMonth] || { projects: new Set(), branches: new Set(), raw: [] };
+    const totalProjs = expectedProjects.size || 114;
+    const totalBranches = expectedBranches.size || 28;
+    
+    const projPercent = Math.min(100, Math.round((activeData.projects.size / totalProjs) * 100)) || 0;
+    const branchPercent = Math.min(100, Math.round((activeData.branches.size / totalBranches) * 100)) || 0;
+
+    // Update KPI Cards
+    const projValEl = document.getElementById('kpi-proj-commitment-val');
+    if (projValEl) projValEl.innerText = `${projPercent}%`;
+    const projSubEl = document.getElementById('kpi-proj-commitment-sub');
+    if (projSubEl) projSubEl.innerText = `${activeData.projects.size} من ${totalProjs} مشروع`;
+
+    const branchValEl = document.getElementById('kpi-branch-commitment-val');
+    if (branchValEl) branchValEl.innerText = `${branchPercent}%`;
+    const branchSubEl = document.getElementById('kpi-branch-commitment-sub');
+    if (branchSubEl) branchSubEl.innerText = `${activeData.branches.size} من ${totalBranches} فرع`;
+
+    // Setup Modal bindings
+    setupModalBindings(activeMonth, activeData);
+}
+
+// Populate Data Tables
+function populateTables() {
+    const recentGridBody = document.getElementById('recent-uploads-body');
+    recentGridBody.innerHTML = '';
+    
+    // Filter and Sort reports (most recent first)
+    const sortedReports = [...reportsData].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+    
+    if (sortedReports.length === 0) {
+        recentGridBody.innerHTML = `<tr><td colspan="7" class="table-empty-state"><i class="fa-solid fa-folder-open"></i><br>لا توجد بيانات مرفوعة حالياً</td></tr>`;
+    } else {
+        sortedReports.slice(0, 50).forEach(r => {
+            const tr = document.createElement('tr');
+            
+            // Format timestamp
+            const dateObj = new Date(r.timestamp);
+            const dateStr = isNaN(dateObj.getTime()) ? r.timestamp : dateObj.toLocaleString('ar-EG', { dateStyle: 'short', timeStyle: 'short' });
+            
+            // Format type badge
+            const typeBadge = r.isProjectReport 
+                ? `<span class="status-badge project">تقرير مشروع</span>`
+                : `<span class="status-badge branch">تقرير فرع</span>`;
+                
+            // Format value
+            const valStr = r.valueUsd > 0 ? formatCurrencyUSD(r.valueUsd) : '-';
+            
+            tr.innerHTML = `
+                <td class="table-date">${dateStr}</td>
+                <td>${r.country}</td>
+                <td>${r.branchName}</td>
+                <td>${r.isProjectReport ? r.projectName : typeBadge}</td>
+                <td>${r.clientName || '-'}</td>
+                <td class="table-currency">${valStr}</td>
+                <td>${r.userstamp ? r.userstamp.substring(0, 8) + '...' : '-'}</td>
+            `;
+            recentGridBody.appendChild(tr);
+        });
+    }
+    
+    // Change Requests Table
+    const reqGridBody = document.getElementById('change-requests-body');
+    reqGridBody.innerHTML = '';
+    
+    const sortedRequests = [...changeRequestsData].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+    
+    if (sortedRequests.length === 0) {
+        reqGridBody.innerHTML = `<tr><td colspan="6" class="table-empty-state"><i class="fa-solid fa-code-pull-request"></i><br>لا توجد طلبات إضافة مشاريع</td></tr>`;
+    } else {
+        sortedRequests.forEach(req => {
+            const tr = document.createElement('tr');
+            
+            const dateObj = new Date(req.timestamp);
+            const dateStr = isNaN(dateObj.getTime()) ? req.timestamp : dateObj.toLocaleString('ar-EG', { dateStyle: 'short' });
+            
+            let statusBadge = '<span class="status-badge pending">قيد الانتظار</span>';
+            if (req.status === 'approved' || req.newProjectId) {
+                statusBadge = '<span class="status-badge approved">تم القبول</span>';
+            } else if (req.status === 'denied') {
+                statusBadge = '<span class="status-badge error" style="background: rgba(239, 68, 68, 0.15); color: #EF4444; padding: 4px 10px; border-radius: 6px; font-weight:700;">مرفوض</span>';
+            }
+            
+            tr.innerHTML = `
+                <td class="table-date">${dateStr}</td>
+                <td>${req.country}</td>
+                <td>${req.branch}</td>
+                <td style="font-weight: 700;">${req.project}</td>
+                <td>${req.client || '-'}</td>
+                <td>${statusBadge}</td>
+            `;
+            reqGridBody.appendChild(tr);
+        });
+    }
+}
+
+// Generate reports by country and aggregate reports by type
+function renderCharts() {
+    const cssStyle = getComputedStyle(document.documentElement);
+    const accentColor = cssStyle.getPropertyValue('--theme-accent').trim();
+    const mutedColor = cssStyle.getPropertyValue('--theme-muted').trim();
+    const deepColor = cssStyle.getPropertyValue('--theme-deep').trim();
+    const panelColor = cssStyle.getPropertyValue('--theme-panel').trim();
+    
+    // 1. Report Type breakdown
+    const projectReports = reportsData.filter(r => r.isProjectReport).length;
+    const branchReports = reportsData.filter(r => !r.isProjectReport).length;
+    
+    const typeCtx = document.getElementById('reportTypeChart').getContext('2d');
+    if (typeChart) typeChart.destroy();
+    
+    typeChart = new Chart(typeCtx, {
+        type: 'doughnut',
+        data: {
+            labels: ['تقارير المشروعات', 'تقارير الفروع'],
+            datasets: [{
+                data: [projectReports, branchReports],
+                backgroundColor: [accentColor, '#3B82F6'],
+                borderColor: panelColor,
+                borderWidth: 2
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'bottom',
+                    labels: { color: '#FFFFFF', font: { family: 'Tajawal' } }
+                }
+            }
+        }
+    });
+    
+    // 2. Activity Timeline over time
+    const activityTimeline = {};
+    reportsData.forEach(r => {
+        const dateObj = new Date(r.timestamp);
+        if (!isNaN(dateObj.getTime())) {
+            const dayStr = dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+            activityTimeline[dayStr] = (activityTimeline[dayStr] || 0) + 1;
+        }
+    });
+    
+    // Sort timeline keys by date
+    const sortedDays = Object.keys(activityTimeline).sort((a, b) => new Date(a) - new Date(b)).slice(-10);
+    const activityCounts = sortedDays.map(d => activityTimeline[d]);
+    
+    const timelineCtx = document.getElementById('timelineChart').getContext('2d');
+    if (timelineChart) timelineChart.destroy();
+    
+    timelineChart = new Chart(timelineCtx, {
+        type: 'line',
+        data: {
+            labels: sortedDays,
+            datasets: [{
+                label: 'عدد التحديثات المرفوعة',
+                data: activityCounts,
+                borderColor: accentColor,
+                backgroundColor: 'rgba(252, 163, 17, 0.1)',
+                borderWidth: 3,
+                fill: true,
+                tension: 0.3
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                x: {
+                    ticks: { color: '#A0AEC0', font: { family: 'Outfit' } },
+                    grid: { color: 'rgba(255, 255, 255, 0.05)' }
+                },
+                y: {
+                    ticks: { color: '#A0AEC0', font: { family: 'Outfit' }, stepSize: 1 },
+                    grid: { color: 'rgba(255, 255, 255, 0.05)' }
+                }
+            },
+            plugins: {
+                legend: { display: false }
+            }
+        }
+    });
+    
+    // 3. Reports by Country sidebar list
+    const countryCounts = {};
+    reportsData.forEach(r => {
+        if (r.country) {
+            countryCounts[r.country] = (countryCounts[r.country] || 0) + 1;
+        }
+    });
+    
+    const countryListEl = document.getElementById('countries-list');
+    countryListEl.innerHTML = '';
+    
+    const sortedCountries = Object.entries(countryCounts).sort((a, b) => b[1] - a[1]);
+    
+    if (sortedCountries.length === 0) {
+        countryListEl.innerHTML = `<div style="text-align: center; color: var(--text-muted); padding: 20px;">لا توجد دول مسجلة</div>`;
+    } else {
+        const maxVal = sortedCountries[0][1];
+        sortedCountries.forEach(([country, count]) => {
+            const fillWidth = (count / maxVal) * 100;
+            const flagClass = getFlagIconClass(country);
+            
+            const div = document.createElement('div');
+            div.className = 'country-stat-row';
+            div.innerHTML = `
+                <div class="country-name-info">
+                    <span class="fi ${flagClass}"></span>
+                    <span>${country}</span>
+                </div>
+                <div class="country-bar-fill" style="background: linear-gradient(to left, rgba(var(--theme-accent-rgb), 0.15) ${fillWidth}%, transparent ${fillWidth}%)">
+                    ${count} تقارير
+                </div>
+            `;
+            countryListEl.appendChild(div);
+        });
+    }
+}
+
+// Get flag icon class based on Arabic country name
+function getFlagIconClass(countryName) {
+    const flags = {
+        'جمهورية مصر العربية': 'fi-eg',
+        'مصر': 'fi-eg',
+        'المملكة العربية السعودية': 'fi-sa',
+        'السعودية': 'fi-sa',
+        'الإمارات العربية المتحدة': 'fi-ae',
+        'الإمارات': 'fi-ae',
+        'جمهورية نيجيريا الاتحادية': 'fi-ng',
+        'نيجيريا': 'fi-ng',
+        'الجمهورية الجزائرية الديمقراطية الشعبية': 'fi-dz',
+        'الجزائر': 'fi-dz',
+        'جمهورية تشاد': 'fi-td',
+        'تشاد': 'fi-td',
+        'اتحاد جزر القمر': 'fi-km',
+        'جزر القمر': 'fi-km'
+    };
+    return flags[countryName.trim()] || 'fi-xx';
+}
+
+// Filter Tables by Search Query
+function filterTable() {
+    const query = document.getElementById('search-box').value.trim().toLowerCase();
+    const rows = document.querySelectorAll('#recent-uploads-body tr');
+    
+    rows.forEach(row => {
+        const text = row.textContent.toLowerCase();
+        if (text.includes(query)) {
+            row.style.display = '';
+        } else {
+            row.style.display = 'none';
+        }
+    });
+}
+
+// Tab Switching
+function switchTab(tabId, btn) {
+    // Deactivate all tabs
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+    
+    // Activate clicked tab
+    btn.classList.add('active');
+    document.getElementById(tabId).classList.add('active');
+}
+
+// Real-time Timer Sync countdown
+function resetTimer() {
+    clearInterval(syncTimer);
+    secondsRemaining = REFRESH_INTERVAL_SECONDS;
+    updateTimerUI();
+    
+    syncTimer = setInterval(() => {
+        secondsRemaining--;
+        updateTimerUI();
+        if (secondsRemaining <= 0) {
+            clearInterval(syncTimer);
+            loadData();
+        }
+    }, 1000);
+}
+
+function updateTimerUI() {
+    document.getElementById('countdown-seconds').innerText = secondsRemaining;
+}
+
+// Theme management
+function selectTheme(themeName) {
+    document.documentElement.setAttribute('data-theme', themeName);
+    localStorage.setItem('appTheme', themeName);
+    
+    // Update theme active class in menu
+    document.querySelectorAll('.theme-menu-option').forEach(opt => {
+        if (opt.getAttribute('data-theme') === themeName) {
+            opt.classList.add('active');
+        } else {
+            opt.classList.remove('active');
+        }
+    });
+    
+    // Reload charts to update visual colors
+    if (reportsData.length > 0) {
+        setTimeout(renderCharts, 100);
+    }
+}
+
+// deduplicate files uploaded twice: Keep only the latest report for each unique context & measurement date
+function deduplicateReports(reports) {
+    const uniqueMap = {};
+    reports.forEach(r => {
+        const id = r.isProjectReport ? (r.projectId || r.projectName) : (r.branchId || r.branchName);
+        const date = r.measurementDate || 'no_date';
+        const key = `${r.isProjectReport ? 'P' : 'B'}_${id}_${date}`;
+        
+        const existing = uniqueMap[key];
+        if (!existing || new Date(r.timestamp) > new Date(existing.timestamp)) {
+            uniqueMap[key] = r;
+        }
+    });
+    return Object.values(uniqueMap);
 }
 
 // Parse Dropdown Registry (dd_lst)
@@ -324,805 +753,176 @@ function parseDropdownRegistry(table) {
     });
 }
 
-// deduplicate files uploaded twice: Keep only the latest report for each unique context & measurement date
-function deduplicateReports(reports) {
-    const uniqueMap = {};
-    reports.forEach(r => {
-        const id = r.isProjectReport ? (r.projectId || r.projectName) : (r.branchId || r.branchName);
-        const date = r.measurementDate || 'no_date';
-        const key = `${r.isProjectReport ? 'P' : 'B'}_${id}_${date}`;
-        
-        const existing = uniqueMap[key];
-        if (!existing || new Date(r.timestamp) > new Date(existing.timestamp)) {
-            uniqueMap[key] = r;
-        }
-    });
-    return Object.values(uniqueMap);
-}
-
-// Format financial value in USD
-function formatCurrencyUSD(value) {
-    if (value >= 1e6) {
-        return `$${(value / 1e6).toFixed(2)}M`;
-    } else if (value >= 1e3) {
-        return `$${(value / 1e3).toFixed(1)}K`;
-    }
-    return `$${value.toFixed(2)}`;
-}
-
-// Main Setup and Fetch Data
-async function loadData() {
-    try {
-        const loader = document.getElementById('loader-overlay');
-        if (loader) loader.classList.remove('hidden');
-        
-        // Fetch 4 tabs in parallel via JSONP (fully CORS-safe!)
-        const [reportsTable, requestsTable, uuidsTable, ddTable] = await Promise.all([
-            fetchSheetJSONP('master output database'),
-            fetchSheetJSONP('change request'),
-            fetchSheetJSONP('UUIDs'),
-            fetchSheetJSONP('dd_lst')
-        ]);
-        
-        // Parse registries first
-        parseDropdownRegistry(ddTable);
-        
-        // Parse data tables
-        const rawReports = parseGvizReports(reportsTable);
-        reportsData = deduplicateReports(rawReports); // Apply duplicate filtering
-        changeRequestsData = parseChangeRequestsGviz(requestsTable);
-        uuidsData = parseUUIDsGviz(uuidsTable);
-        
-        // Update general KPIs (Header-level)
-        updateHeaderKPIs();
-        
-        // Update Tab 1 (Reporting rates / lists)
-        updateTab1Reporting();
-        
-        // Update Tab 2 (Management KPIs / scrolling ticker / grid)
-        updateTab2Management();
-        
-        // Update Tab 3 (Hierarchical selectors / profile)
-        updateTab3Dropdowns();
-        
-        // Update connection status
-        const pulse = document.getElementById('pulse-indicator');
-        if (pulse) pulse.classList.remove('error');
-        setTxt('status-text', 'متصل لحظياً بالخادم');
-        
-        const now = new Date();
-        setTxt('last-updated', now.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
-        
-        if (loader) loader.classList.add('hidden');
-        resetTimer();
-    } catch (error) {
-        console.error("Dashboard full stack error:", error);
-        
-        // Safe UI failure indicators
-        const pulse = document.getElementById('pulse-indicator');
-        if (pulse) pulse.classList.add('error');
-        setTxt('status-text', 'فشل الاتصال بالخادم');
-        
-        const loader = document.getElementById('loader-overlay');
-        if (loader) loader.classList.add('hidden');
-        resetTimer();
-    }
-}
-
-// Calculate general header-level KPIs
-function updateHeaderKPIs() {
-    const totalUploads = reportsData.length;
-    const projectReports = reportsData.filter(r => r.isProjectReport).length;
-    const branchReports = reportsData.filter(r => !r.isProjectReport).length;
+// Setup Pop-up modal list binders and data populations
+function setupModalBindings(activeMonth, activeData) {
+    const projCard = document.getElementById('kpi-proj-commitment-card');
+    const branchCard = document.getElementById('kpi-branch-commitment-card');
+    const modal = document.getElementById('compliance-modal');
+    const modalCloseBtn = document.getElementById('modal-close-btn');
+    const modalTitle = document.getElementById('modal-title');
+    const submittedBody = document.getElementById('modal-submitted-body');
+    const lateBody = document.getElementById('modal-late-body');
     
-    // Uploads Card
-    setTxt('kpi-uploads-val', totalUploads);
-    setHtml('kpi-uploads-sub', `<span>${projectReports}</span> مشروع | <span>${branchReports}</span> فرع`);
+    if (!modal || !modalCloseBtn || !submittedBody || !lateBody || !projCard || !branchCard) return;
     
-    // Change Requests Card
-    const totalRequests = changeRequestsData.length;
-    const approvedRequests = changeRequestsData.filter(req => req.status === 'approved' || req.newProjectId).length;
-    const pendingRequests = totalRequests - changeRequestsData.filter(req => req.status === 'denied').length - approvedRequests;
-    setTxt('kpi-requests-val', totalRequests);
-    setHtml('kpi-requests-sub', `<span>${approvedRequests}</span> مقبول | <span>${pendingRequests}</span> قيد الانتظار`);
-    
-    // Coverage & Traffic
-    const activeCountries = new Set(reportsData.map(r => r.country).filter(Boolean)).size;
-    const uniqueProjects = new Set(reportsData.map(r => r.projectName).filter(Boolean)).size;
-    setTxt('kpi-coverage-val', uniqueProjects);
-    setHtml('kpi-coverage-sub', `<span>${activeCountries}</span> دولة | <span>${expectedBranches.size}</span> قطاعات وفروع مسجلة`);
-}
-
-// Tab 1: Monthly Reporting Upload KPIs & Auto-reset Month cycle state machine
-function updateTab1Reporting() {
-    // Group reports by month based on timestamp (YYYY-MM)
-    const reportsByMonth = {};
-    reportsData.forEach(r => {
-        const d = new Date(r.timestamp);
-        if (isNaN(d.getTime())) return;
-        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-        if (!reportsByMonth[key]) {
-            reportsByMonth[key] = { projects: new Set(), branches: new Set(), raw: [] };
-        }
-        reportsByMonth[key].raw.push(r);
-        if (r.isProjectReport && r.projectName) {
-            if (expectedProjects.has(r.projectName)) {
-                reportsByMonth[key].projects.add(r.projectName);
-            }
-        } else if (!r.isProjectReport && r.branchName) {
-            if (expectedBranches.has(r.branchName)) {
-                reportsByMonth[key].branches.add(r.branchName);
-            }
-        }
-    });
-
-    const monthsList = Object.keys(reportsByMonth).sort();
-    let activeMonth = '';
-    let isComplete = false;
-
-    if (monthsList.length === 0) {
-        const now = new Date();
-        activeMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-    } else {
-        const latestMonth = monthsList[monthsList.length - 1];
-        const mData = reportsByMonth[latestMonth];
-        
-        const totalProjs = expectedProjects.size || 114;
-        const totalBranches = expectedBranches.size || 28;
-        
-        const projPercent = (mData.projects.size / totalProjs) * 100;
-        const branchPercent = (mData.branches.size / totalBranches) * 100;
-        
-        // Auto-reset state machine: If both reach 100%, cycle resets for the next month!
-        if (projPercent >= 100 && branchPercent >= 100) {
-            isComplete = true;
-            const [yr, mn] = latestMonth.split('-').map(Number);
-            let nextYr = yr;
-            let nextMn = mn + 1;
-            if (nextMn > 12) {
-                nextMn = 1;
-                nextYr += 1;
-            }
-            activeMonth = `${nextYr}-${String(nextMn).padStart(2, '0')}`;
-        } else {
-            activeMonth = latestMonth;
-        }
-    }
-
-    // Format Arabic label for active cycle
-    const [yr, mn] = activeMonth.split('-');
-    const arabicMonths = {
-        '01': 'يناير', '02': 'فبراير', '03': 'مارس', '04': 'أبريل',
-        '05': 'مايو', '06': 'يونيو', '07': 'يوليو', '08': 'أغسطس',
-        '09': 'سبتمبر', '10': 'أكتوبر', '11': 'نوفمبر', '12': 'ديسمبر'
+    const formatArabicMonth = (monthKey) => {
+        const [yr, mn] = monthKey.split('-');
+        const arabicMonths = {
+            '01': 'يناير', '02': 'فبراير', '03': 'مارس', '04': 'أبريل',
+            '05': 'مايو', '06': 'يونيو', '07': 'يوليو', '08': 'أغسطس',
+            '09': 'سبتمبر', '10': 'أكتوبر', '11': 'نوفمبر', '12': 'ديسمبر'
+        };
+        return `${arabicMonths[mn] || mn} ${yr}`;
     };
-    const cycleLabel = `دورة المتابعة لشهر ${arabicMonths[mn] || mn} ${yr}`;
-    setTxt('active-month-title', cycleLabel);
-
-    const cycleBadge = document.getElementById('cycle-status-badge');
-    if (cycleBadge) {
-        if (isComplete) {
-            cycleBadge.innerText = 'دورة مكتملة - تم إعادة الضبط';
-            cycleBadge.className = 'cycle-badge complete';
-        } else {
-            cycleBadge.innerText = 'دورة نشطة جارٍ استلامها';
-            cycleBadge.className = 'cycle-badge';
-        }
-    }
-
-    // Get statistics for the active month
-    const activeData = reportsByMonth[activeMonth] || { projects: new Set(), branches: new Set(), raw: [] };
-    const totalProjs = expectedProjects.size || 114;
-    const totalBranches = expectedBranches.size || 28;
     
-    const projPercent = Math.min(100, Math.round((activeData.projects.size / totalProjs) * 100)) || 0;
-    const branchPercent = Math.min(100, Math.round((activeData.branches.size / totalBranches) * 100)) || 0;
-
-    // Update Progress Ring SVG dials (dasharray circumference = 364.42)
-    const ringCircumference = 364.42;
-    
-    const projCircle = document.getElementById('proj-progress-circle');
-    if (projCircle) {
-        const projOffset = ringCircumference - (projPercent / 100) * ringCircumference;
-        projCircle.style.strokeDashoffset = projOffset;
-    }
-    setTxt('proj-progress-percent', `${projPercent}%`);
-    setTxt('proj-progress-numbers', `${activeData.projects.size} من ${totalProjs} مشروع`);
-
-    const branchCircle = document.getElementById('branch-progress-circle');
-    if (branchCircle) {
-        const branchOffset = ringCircumference - (branchPercent / 100) * ringCircumference;
-        branchCircle.style.strokeDashoffset = branchOffset;
-    }
-    setTxt('branch-progress-percent', `${branchPercent}%`);
-    setTxt('branch-progress-numbers', `${activeData.branches.size} من ${totalBranches} فرع`);
-
-    // Separate Submitted and Late lists
-    const submittedListBody = document.getElementById('submitted-list-body');
-    const lateListBody = document.getElementById('late-list-body');
-
-    if (submittedListBody) {
-        submittedListBody.innerHTML = '';
-        let submittedCount = 0;
-        activeData.raw.forEach(r => {
-            submittedCount++;
-            const tr = document.createElement('tr');
-            const dateObj = new Date(r.timestamp);
-            const timeStr = isNaN(dateObj.getTime()) ? r.timestamp : dateObj.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' });
-            const typeBadge = r.isProjectReport 
-                ? `<span class="type-proj">مشروع</span>` 
-                : `<span class="type-branch">فرع</span>`;
-            const name = r.isProjectReport ? r.projectName : r.branchName;
-            const country = r.country || (r.isProjectReport ? projectToCountryMap[name] : branchToCountryMap[name]) || '-';
-
-            tr.innerHTML = `
-                <td style="font-weight:700;">${name}</td>
-                <td>${typeBadge}</td>
-                <td>${country}</td>
-                <td style="font-family:'Outfit';">${timeStr}</td>
-            `;
-            submittedListBody.appendChild(tr);
-        });
-        setTxt('submitted-count', submittedCount);
-        if (submittedCount === 0) {
-            submittedListBody.innerHTML = `<tr><td colspan="4" style="text-align:center; color:var(--text-muted); padding:30px;">لم يتم استلام أي تقارير بعد في هذه الدورة.</td></tr>`;
-        }
-    }
-
-    if (lateListBody) {
-        lateListBody.innerHTML = '';
-        let lateCount = 0;
+    const showModal = (type) => {
+        submittedBody.innerHTML = '';
+        lateBody.innerHTML = '';
         
-        // Find late projects
-        expectedProjects.forEach(pName => {
-            if (!activeData.projects.has(pName)) {
-                lateCount++;
-                const tr = document.createElement('tr');
-                const country = projectToCountryMap[pName] || '-';
-                tr.innerHTML = `
-                    <td style="font-weight:700;">${pName}</td>
-                    <td><span class="type-proj">مشروع</span></td>
-                    <td>${country}</td>
-                    <td><span class="status-late">لم يرسل</span></td>
-                `;
-                lateListBody.appendChild(tr);
-            }
-        });
-
-        // Find late branches
-        expectedBranches.forEach(bName => {
-            if (!activeData.branches.has(bName)) {
-                lateCount++;
-                const tr = document.createElement('tr');
-                const country = branchToCountryMap[bName] || '-';
-                tr.innerHTML = `
-                    <td style="font-weight:700;">${bName}</td>
-                    <td><span class="type-branch">فرع</span></td>
-                    <td>${country}</td>
-                    <td><span class="status-late">لم يرسل</span></td>
-                `;
-                lateListBody.appendChild(tr);
-            }
-        });
-        
-        setTxt('late-count', lateCount);
-        if (lateCount === 0) {
-            lateListBody.innerHTML = `<tr><td colspan="4" style="text-align:center; color:#10B981; font-weight:700; padding:30px;">🏆 التزام كامل! جميع المشاريع والفروع أرسلت تقاريرها.</td></tr>`;
-        }
-    }
-}
-
-// Tab 2: Elite Indicator & Stock Ticker & Management grid
-function updateTab2Management() {
-    // Group reports by month to find previous month comparisons
-    const reportsByMonth = {};
-    reportsData.forEach(r => {
-        const d = new Date(r.timestamp);
-        if (isNaN(d.getTime())) return;
-        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-        if (!reportsByMonth[key]) reportsByMonth[key] = [];
-        reportsByMonth[key].push(r);
-    });
-    
-    const months = Object.keys(reportsByMonth).sort();
-    const currentMonthKey = months[months.length - 1];
-    const prevMonthKey = months[months.length - 2];
-    
-    // Get latest report per project/branch overall to compute health
-    const latestOverallReports = {};
-    reportsData.forEach(r => {
-        const id = r.isProjectReport ? (r.projectId || r.projectName) : (r.branchId || r.branchName);
-        const key = `${r.isProjectReport ? 'P' : 'B'}_${id}`;
-        const existing = latestOverallReports[key];
-        if (!existing || new Date(r.timestamp) > new Date(existing.timestamp)) {
-            latestOverallReports[key] = r;
-        }
-    });
-    
-    const activePortfolio = Object.values(latestOverallReports);
-    
-    let totalPnlUSD = 0;
-    let lossProjCount = 0;
-    let totalProjReports = 0;
-    
-    activePortfolio.forEach(r => {
-        if (r.isProjectReport) {
-            totalProjReports++;
-            totalPnlUSD += r.pnl;
-            if (r.pnl < 0) {
-                lossProjCount++;
-            }
-        }
-    });
-    
-    const lossRatio = totalProjReports > 0 ? (lossProjCount / totalProjReports) : 0;
-    const isHealthy = totalPnlUSD >= 0 && lossRatio < 0.15;
-    
-    const eliteEl = document.getElementById('elite-indicator');
-    const eliteIcon = document.getElementById('elite-status-icon');
-    const eliteTitle = document.getElementById('elite-status-title');
-    const eliteDesc = document.getElementById('elite-status-desc');
-    
-    if (eliteEl) {
-        if (isHealthy) {
-            eliteEl.className = 'elite-banner success-mode';
-            if (eliteIcon) eliteIcon.innerHTML = '<i class="fa-solid fa-circle-check"></i>';
-            if (eliteTitle) eliteTitle.innerText = 'حالة المحفظة: أداء ممتاز ومثالي';
-            if (eliteDesc) eliteDesc.innerHTML = `المحفظة الاستثمارية تحقق أرباحاً إجمالية بقيمة <strong>${formatCurrencyUSD(totalPnlUSD)}</strong> ومعدل المشاريع المتعثرة مالياً أقل من 15% (النسبة الحالية: <strong>${Math.round(lossRatio*100)}%</strong>).`;
-        } else {
-            eliteEl.className = 'elite-banner alert-mode';
-            if (eliteIcon) eliteIcon.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i>';
-            if (eliteTitle) eliteTitle.innerText = 'تنبيه: مؤشرات تراجع في أداء المحفظة';
-            if (eliteDesc) eliteDesc.innerHTML = `يوجد تراجع أداء إما بسبب أرباح سلبية إجمالية (<strong>${formatCurrencyUSD(totalPnlUSD)}</strong>) أو زيادة في المشروعات التي تسجل خسائر مالية (<strong>${Math.round(lossRatio*100)}%</strong>).`;
-        }
-    }
-
-    // 2. Generate stock ticker comparing current month reports vs previous month reports
-    const tickerContent = document.getElementById('ticker-content');
-    if (tickerContent) {
-        tickerContent.innerHTML = '';
-        
-        const prevMonthData = {};
-        if (prevMonthKey && reportsByMonth[prevMonthKey]) {
-            reportsByMonth[prevMonthKey].forEach(r => {
-                if (r.isProjectReport) prevMonthData[r.projectName] = r;
-            });
-        }
-        
-        const currentMonthReports = reportsByMonth[currentMonthKey] || [];
-        let tickerItemsHtml = '';
-        
-        currentMonthReports.forEach(r => {
-            if (!r.isProjectReport) return;
-            const prev = prevMonthData[r.projectName];
+        if (type === 'project') {
+            modalTitle.innerText = `التزام المشروعات - دورة ${formatArabicMonth(activeMonth)}`;
             
-            let pnlTrendSymbol = '';
-            let progressTrendSymbol = '';
-            
-            if (prev) {
-                const pnlDiff = r.pnl - prev.pnl;
-                const progDiff = r.progress - prev.progress;
-                
-                pnlTrendSymbol = pnlDiff >= 0 
-                    ? `<span class="up">▲ $${(pnlDiff/1e3).toFixed(1)}K</span>` 
-                    : `<span class="down">▼ $${(Math.abs(pnlDiff)/1e3).toFixed(1)}K</span>`;
+            // Populate Submitted Projects
+            let submittedCount = 0;
+            activeData.raw.forEach(r => {
+                if (r.isProjectReport && r.projectName) {
+                    submittedCount++;
+                    const tr = document.createElement('tr');
+                    const country = r.country || projectToCountryMap[r.projectName] || '-';
+                    const dObj = new Date(r.timestamp);
+                    const timeStr = isNaN(dObj.getTime()) ? r.timestamp : dObj.toLocaleDateString('ar-EG', {month:'short', day:'numeric'}) + ' ' + dObj.toLocaleTimeString('ar-EG', {hour:'2-digit', minute:'2-digit'});
                     
-                progressTrendSymbol = progDiff >= 0 
-                    ? `<span class="up">▲ ${progDiff.toFixed(1)}%</span>` 
-                    : `<span class="down">▼ ${Math.abs(progDiff).toFixed(1)}%</span>`;
-            } else {
-                pnlTrendSymbol = `<span class="up">جديد</span>`;
-                progressTrendSymbol = `<span class="up">جديد</span>`;
+                    tr.innerHTML = `
+                        <td style="font-weight:700;">${r.projectName}</td>
+                        <td>${country}</td>
+                        <td style="font-family:'Outfit'; font-size:10px;">${timeStr}</td>
+                    `;
+                    submittedBody.appendChild(tr);
+                }
+            });
+            if (submittedCount === 0) {
+                submittedBody.innerHTML = `<tr><td colspan="3" style="text-align:center; color:var(--text-muted); padding:20px;">لم يتم تسليم أي تقارير بعد</td></tr>`;
             }
             
-            tickerItemsHtml += `
-                <span class="ticker-item">
-                    <strong>${r.projectName}</strong>: 
-                    الربح: ${formatCurrencyUSD(r.pnl)} (${pnlTrendSymbol}) | 
-                    التقدم: ${r.progress}% (${progressTrendSymbol})
-                </span>
-            `;
-        });
-        
-        if (!tickerItemsHtml) {
-            tickerContent.innerHTML = '<span class="ticker-item">لا توجد مقارنات أداء للشهر الحالي بعد</span>';
-        } else {
-            tickerContent.innerHTML = tickerItemsHtml + tickerItemsHtml;
-        }
-    }
-
-    // 3. Populate management table grid
-    const managementGridBody = document.getElementById('management-grid-body');
-    if (managementGridBody) {
-        managementGridBody.innerHTML = '';
-        
-        activePortfolio.forEach(r => {
-            const tr = document.createElement('tr');
-            const name = r.isProjectReport ? r.projectName : r.branchName;
-            const typeBadge = r.isProjectReport 
-                ? '<span class="badge proj">مشروع</span>' 
-                : '<span class="badge branch">فرع</span>';
-            const country = r.country || (r.isProjectReport ? projectToCountryMap[name] : branchToCountryMap[name]) || '-';
+            // Populate Unsubmitted Projects
+            let lateCount = 0;
+            expectedProjects.forEach(pName => {
+                if (!activeData.projects.has(pName)) {
+                    lateCount++;
+                    const tr = document.createElement('tr');
+                    const country = projectToCountryMap[pName] || '-';
+                    tr.innerHTML = `
+                        <td style="font-weight:700;">${pName}</td>
+                        <td>${country}</td>
+                        <td><span class="status-late">لم يرسل</span></td>
+                    `;
+                    lateBody.appendChild(tr);
+                }
+            });
+            if (lateCount === 0) {
+                lateBody.innerHTML = `<tr><td colspan="3" style="text-align:center; color:#10B981; font-weight:700; padding:20px;">🏆 التزام كامل من جميع المشاريع!</td></tr>`;
+            }
             
-            const progressVal = r.isProjectReport ? `${r.progress}%` : '-';
-            const pnlStr = r.pnl >= 0 
-                ? `<span class="pnl-pos">${formatCurrencyUSD(r.pnl)}</span>` 
-                : `<span class="pnl-neg">${formatCurrencyUSD(r.pnl)}</span>`;
-                
-            const isLoss = r.pnl < 0;
-            const quickIndicator = isLoss
-                ? '<span class="status-indicator-pill danger"><i class="fa-solid fa-circle-exclamation"></i> تراجع مالي</span>'
-                : '<span class="status-indicator-pill success"><i class="fa-solid fa-circle-check"></i> منتظم</span>';
-                
-            tr.innerHTML = `
-                <td style="font-weight: 700; max-width: 350px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${name}</td>
-                <td>${typeBadge}</td>
-                <td>${country}</td>
-                <td style="font-family: 'Outfit'; font-weight:700;">${progressVal}</td>
-                <td>${pnlStr}</td>
-                <td>${quickIndicator}</td>
-            `;
-            managementGridBody.appendChild(tr);
-        });
-        
-        // Add grid filter listener (safe setup)
-        const searchInput = document.getElementById('management-search');
-        if (searchInput && !searchInput.dataset.hasListener) {
-            searchInput.dataset.hasListener = "true";
-            searchInput.addEventListener('input', () => {
-                const q = searchInput.value.toLowerCase().trim();
-                const rows = managementGridBody.querySelectorAll('tr');
-                rows.forEach(row => {
-                    row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none';
-                });
-            });
-        }
-    }
-}
-
-// Tab 3: Dynamic Dropdown selector and Profile cards
-function updateTab3Dropdowns() {
-    const selectCountry = document.getElementById('select-country');
-    const selectBranch = document.getElementById('select-branch');
-    const selectProject = document.getElementById('select-project');
-    
-    if (!selectCountry || !selectBranch || !selectProject) return;
-    
-    // 1. Populate Country List
-    const countriesSet = new Set();
-    expectedBranches.forEach(b => {
-        const c = branchToCountryMap[b];
-        if (c) countriesSet.add(c);
-    });
-    
-    selectCountry.innerHTML = '<option value="">-- اختر دولة --</option>';
-    Array.from(countriesSet).sort().forEach(c => {
-        const opt = document.createElement('option');
-        opt.value = c;
-        opt.innerText = c;
-        selectCountry.appendChild(opt);
-    });
-    
-    // 2. Change Country Listener
-    selectCountry.onchange = () => {
-        const country = selectCountry.value;
-        selectBranch.innerHTML = '<option value="">-- اختر فرع --</option>';
-        selectProject.innerHTML = '<option value="">-- اختر مشروع --</option>';
-        selectProject.disabled = true;
-        
-        if (!country) {
-            selectBranch.disabled = true;
-            hideProfile();
-            return;
-        }
-        
-        selectBranch.disabled = false;
-        
-        // Find branches in this country
-        const branchesInCountry = [];
-        expectedBranches.forEach(b => {
-            if (branchToCountryMap[b] === country) {
-                branchesInCountry.push(b);
-            }
-        });
-        
-        branchesInCountry.sort().forEach(b => {
-            const opt = document.createElement('option');
-            opt.value = b;
-            opt.innerText = b;
-            selectBranch.appendChild(opt);
-        });
-        
-        hideProfile();
-    };
-    
-    // 3. Change Branch Listener
-    selectBranch.onchange = () => {
-        const branchName = selectBranch.value;
-        selectProject.innerHTML = '<option value="">-- اختر مشروع --</option>';
-        
-        if (!branchName) {
-            selectProject.disabled = true;
-            hideProfile();
-            return;
-        }
-        
-        selectProject.disabled = false;
-        
-        // Find projects under this branch
-        const projectsInBranch = [];
-        expectedProjects.forEach(p => {
-            if (projectToBranchMap[p] === branchName) {
-                projectsInBranch.push(p);
-            }
-        });
-        
-        // Add a placeholder project report selection for the branch itself
-        const branchOpt = document.createElement('option');
-        branchOpt.value = `BRANCH_${branchName}`;
-        branchOpt.innerText = `[تقرير الفرع] - ${branchName}`;
-        selectProject.appendChild(branchOpt);
-        
-        projectsInBranch.sort().forEach(p => {
-            const opt = document.createElement('option');
-            opt.value = p;
-            opt.innerText = p;
-            selectProject.appendChild(opt);
-        });
-        
-        hideProfile();
-    };
-    
-    // 4. Change Project Listener
-    selectProject.onchange = () => {
-        const val = selectProject.value;
-        if (!val) {
-            hideProfile();
-            return;
-        }
-        
-        showProfile(val);
-    };
-}
-
-function hideProfile() {
-    const emptyPrompt = document.getElementById('browser-empty-prompt');
-    const profileContainer = document.getElementById('browser-profile-container');
-    if (emptyPrompt) emptyPrompt.classList.remove('hidden');
-    if (profileContainer) profileContainer.classList.add('hidden');
-}
-
-// Render dynamic project/branch details profile card
-function showProfile(identifier) {
-    const emptyPrompt = document.getElementById('browser-empty-prompt');
-    const profileContainer = document.getElementById('browser-profile-container');
-    if (emptyPrompt) emptyPrompt.classList.add('hidden');
-    if (profileContainer) profileContainer.classList.remove('hidden');
-    
-    const isBranchReport = identifier.startsWith('BRANCH_');
-    const name = isBranchReport ? identifier.replace('BRANCH_', '') : identifier;
-    
-    // Find all historical reports for this item
-    const history = reportsData.filter(r => {
-        return r.isProjectReport === !isBranchReport && (r.isProjectReport ? r.projectName === name : r.branchName === name);
-    }).sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
-    
-    // Latest report
-    const latest = history[history.length - 1] || null;
-    
-    // Update elements
-    const badgeType = document.getElementById('profile-badge-type');
-    if (badgeType) {
-        badgeType.innerText = isBranchReport ? 'تقرير مالي للفرع' : 'تقرير أداء للمشروع';
-        badgeType.className = isBranchReport ? 'profile-badge type-branch' : 'profile-badge type-proj';
-    }
-    
-    setTxt('profile-title-name', name);
-    
-    const subtitle = document.getElementById('profile-subtitle-client');
-    if (subtitle) {
-        subtitle.innerText = latest 
-            ? `العميل: ${latest.clientName || '-'}` 
-            : `الجهة: ${isBranchReport ? 'الفرع الإقليمي' : 'المشروع الخارجي'}`;
-    }
-        
-    const country = isBranchReport ? branchToCountryMap[name] : projectToCountryMap[name];
-    setTxt('profile-country', country || '-');
-    
-    const branch = isBranchReport ? name : (projectToBranchMap[name] || '-');
-    setTxt('profile-branch', branch);
-    
-    const pnlVal = latest ? latest.pnl : 0;
-    const progressVal = latest ? latest.progress : 0;
-    
-    setTxt('profile-progress', isBranchReport ? '-' : `${progressVal}%`);
-    setTxt('profile-pnl', latest ? formatCurrencyUSD(pnlVal) : '-');
-    
-    // Dynamic Risk Index Badge Calculation (0-100)
-    let riskScore = 10;
-    
-    if (latest) {
-        if (latest.pnl < 0) riskScore += 35;
-        if (!isBranchReport) {
-            if (latest.progress < 30) riskScore += 20;
-            else if (latest.progress < 60) riskScore += 10;
-        }
-    } else {
-        riskScore += 40;
-    }
-    
-    const riskBadge = document.getElementById('risk-badge-val');
-    if (riskBadge) {
-        riskBadge.innerText = riskScore >= 50 
-            ? `مخاطر مرتفعة (${riskScore}%)` 
-            : `مخاطر منخفضة (${riskScore}%)`;
-        riskBadge.className = riskScore >= 50 ? 'risk-badge high' : 'risk-badge low';
-    }
-
-    // RENDER CHARTS
-    renderProfileCharts(isBranchReport, name, latest, history);
-}
-
-// Generate Pie Chart and progress timeline histogram
-function renderProfileCharts(isBranch, name, latest, history) {
-    const cssStyle = getComputedStyle(document.documentElement);
-    const accentColor = cssStyle.getPropertyValue('--theme-accent').trim() || '#FCA311';
-    
-    const pieCanvas = document.getElementById('profilePieChart');
-    if (pieCanvas) {
-        const pieCtx = pieCanvas.getContext('2d');
-        if (profilePieChart) profilePieChart.destroy();
-        
-        let pieLabels = [];
-        let pieData = [];
-        let pieColors = [];
-        
-        if (latest) {
-            if (isBranch) {
-                pieLabels = ['إجمالي المصروفات', 'صافي الأرباح/الخسائر'];
-                const absPnl = Math.abs(latest.pnl);
-                pieData = [latest.contractValue || 100, absPnl];
-                pieColors = ['#EF4444', latest.pnl >= 0 ? '#10B981' : '#F59E0B'];
-            } else {
-                const executed = latest.executedValue || 0;
-                const contractVal = latest.valueUsd || 100;
-                const remaining = Math.max(0, contractVal - executed);
-                
-                pieLabels = ['الأعمال المنفذة المعتمدة', 'الأعمال المتبقية بالدولار'];
-                pieData = [executed, remaining];
-                pieColors = [accentColor, '#3B82F6'];
-            }
-        } else {
-            pieLabels = ['لا توجد بيانات مالية'];
-            pieData = [1];
-            pieColors = ['rgba(255,255,255,0.05)'];
-        }
-        
-        profilePieChart = new Chart(pieCtx, {
-            type: 'pie',
-            data: {
-                labels: pieLabels,
-                datasets: [{
-                    data: pieData,
-                    backgroundColor: pieColors,
-                    borderColor: '#162444',
-                    borderWidth: 2
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: {
-                        position: 'bottom',
-                        labels: { color: '#FFFFFF', font: { family: 'Tajawal', size: 10 } }
-                    }
+        } else if (type === 'branch') {
+            modalTitle.innerText = `التزام الفروع والشركات - دورة ${formatArabicMonth(activeMonth)}`;
+            
+            // Populate Submitted Branches
+            let submittedCount = 0;
+            activeData.raw.forEach(r => {
+                if (!r.isProjectReport && r.branchName) {
+                    submittedCount++;
+                    const tr = document.createElement('tr');
+                    const country = r.country || branchToCountryMap[r.branchName] || '-';
+                    const dObj = new Date(r.timestamp);
+                    const timeStr = isNaN(dObj.getTime()) ? r.timestamp : dObj.toLocaleDateString('ar-EG', {month:'short', day:'numeric'}) + ' ' + dObj.toLocaleTimeString('ar-EG', {hour:'2-digit', minute:'2-digit'});
+                    
+                    tr.innerHTML = `
+                        <td style="font-weight:700;">${r.branchName}</td>
+                        <td>${country}</td>
+                        <td style="font-family:'Outfit'; font-size:10px;">${timeStr}</td>
+                    `;
+                    submittedBody.appendChild(tr);
                 }
-            }
-        });
-    }
-    
-    const histoCanvas = document.getElementById('profileHistoChart');
-    if (histoCanvas) {
-        const histoCtx = histoCanvas.getContext('2d');
-        if (profileHistoChart) profileHistoChart.destroy();
-        
-        let histoLabels = [];
-        let histoData = [];
-        let labelText = '';
-        
-        if (history.length > 0) {
-            history.slice(-10).forEach(r => {
-                histoLabels.push(r.measurementDate || 'بدون تاريخ');
-                histoData.push(isBranch ? r.pnl : r.progress);
             });
-            labelText = isBranch ? 'صافي الربح / الخسارة بالعملة المحلية' : 'نسبة الإنجاز المخططة (%)';
-        } else {
-            histoLabels = ['لا توجد تقارير'];
-            histoData = [0];
-            labelText = 'لا توجد بيانات';
+            if (submittedCount === 0) {
+                submittedBody.innerHTML = `<tr><td colspan="3" style="text-align:center; color:var(--text-muted); padding:20px;">لم يتم تسليم أي تقارير بعد</td></tr>`;
+            }
+            
+            // Populate Unsubmitted Branches
+            let lateCount = 0;
+            expectedBranches.forEach(bName => {
+                if (!activeData.branches.has(bName)) {
+                    lateCount++;
+                    const tr = document.createElement('tr');
+                    const country = branchToCountryMap[bName] || '-';
+                    tr.innerHTML = `
+                        <td style="font-weight:700;">${bName}</td>
+                        <td>${country}</td>
+                        <td><span class="status-late">لم يرسل</span></td>
+                    `;
+                    lateBody.appendChild(tr);
+                }
+            });
+            if (lateCount === 0) {
+                lateBody.innerHTML = `<tr><td colspan="3" style="text-align:center; color:#10B981; font-weight:700; padding:20px;">🏆 التزام كامل من جميع الفروع!</td></tr>`;
+            }
         }
         
-        profileHistoChart = new Chart(histoCtx, {
-            type: 'bar',
-            data: {
-                labels: histoLabels,
-                datasets: [{
-                    label: labelText,
-                    data: histoData,
-                    backgroundColor: isBranch ? 'rgba(59, 130, 246, 0.4)' : 'rgba(252, 163, 17, 0.4)',
-                    borderColor: isBranch ? '#3B82F6' : accentColor,
-                    borderWidth: 2,
-                    borderRadius: 4
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                scales: {
-                    x: {
-                        ticks: { color: '#A0AEC0', font: { family: 'Outfit', size: 9 } },
-                        grid: { color: 'rgba(255, 255, 255, 0.05)' }
-                    },
-                    y: {
-                        ticks: { color: '#A0AEC0', font: { family: 'Outfit', size: 9 } },
-                        grid: { color: 'rgba(255, 255, 255, 0.05)' }
-                    }
-                },
-                plugins: {
-                    legend: {
-                        labels: { color: '#FFFFFF', font: { family: 'Tajawal', size: 10 } }
-                    }
-                }
-            }
-        });
-    }
-}
-
-// Real-time Timer Sync countdown
-function resetTimer() {
-    clearInterval(syncTimer);
-    secondsRemaining = REFRESH_INTERVAL_SECONDS;
-    updateTimerUI();
+        modal.classList.remove('hidden');
+        setTimeout(() => modal.classList.add('show'), 10);
+    };
     
-    syncTimer = setInterval(() => {
-        secondsRemaining--;
-        updateTimerUI();
-        if (secondsRemaining <= 0) {
-            clearInterval(syncTimer);
-            loadData();
-        }
-    }, 1000);
-}
-
-function updateTimerUI() {
-    setTxt('countdown-seconds', secondsRemaining);
-}
-
-// Tab Switching
-function switchMainTab(tabId, btn) {
-    document.querySelectorAll('.nav-tab-btn').forEach(b => b.classList.remove('active'));
-    document.querySelectorAll('.main-tab-content').forEach(c => c.classList.remove('active'));
+    const hideModal = () => {
+        modal.classList.remove('show');
+        setTimeout(() => modal.classList.add('hidden'), 300);
+    };
     
-    btn.classList.add('active');
+    // Bind clicks safely
+    projCard.onclick = () => showModal('project');
+    branchCard.onclick = () => showModal('branch');
+    modalCloseBtn.onclick = hideModal;
     
-    const target = document.getElementById(tabId);
-    if (target) target.classList.add('active');
+    modal.onclick = (e) => {
+        if (e.target === modal) hideModal();
+    };
 }
 
 // Initialize on page load
 window.addEventListener('DOMContentLoaded', () => {
-    // Lock appTheme to corporate in localStorage
-    localStorage.setItem('appTheme', 'corporate');
+    // Setup Theme from localStorage
+    const savedTheme = localStorage.getItem('appTheme') || 'corporate';
+    selectTheme(savedTheme);
     
     // Load initial data
     loadData();
     
-    // Refresh Button Click
-    const refreshBtn = document.getElementById('refresh-btn');
-    if (refreshBtn) {
-        refreshBtn.addEventListener('click', () => {
-            loadData();
+    // Toggle Theme Selector dropdown menu
+    const themeBtn = document.getElementById('theme-btn');
+    const themeMenu = document.getElementById('theme-menu');
+    
+    themeBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        themeMenu.classList.toggle('open');
+    });
+    
+    document.addEventListener('click', () => {
+        themeMenu.classList.remove('open');
+    });
+    
+    document.querySelectorAll('.theme-menu-option').forEach(opt => {
+        opt.addEventListener('click', () => {
+            const theme = opt.getAttribute('data-theme');
+            selectTheme(theme);
         });
-    }
+    });
+    
+    // Refresh Button Click
+    document.getElementById('refresh-btn').addEventListener('click', () => {
+        loadData();
+    });
+    
+    // Search Box Input
+    document.getElementById('search-box').addEventListener('input', () => {
+        filterTable();
+    });
 });
