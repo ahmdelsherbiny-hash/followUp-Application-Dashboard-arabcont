@@ -24,6 +24,10 @@ html[data-theme="corporate"] {
     --modal-overlay-bg: rgba(10, 17, 30, 0.85);
     --input-bg: rgba(0, 0, 0, 0.25);
     --scrollbar-thumb-bg: rgba(255, 255, 255, 0.15);
+    
+    /* Button specific variables */
+    --btn-bg: rgba(255, 255, 255, 0.05);
+    --btn-border: rgba(255, 255, 255, 0.15);
 }
 
 html[data-theme="aegov"] {
@@ -49,6 +53,10 @@ html[data-theme="aegov"] {
     --modal-overlay-bg: rgba(15, 23, 42, 0.4);
     --input-bg: #FFFFFF;
     --scrollbar-thumb-bg: rgba(197, 155, 39, 0.3);
+    
+    /* Button specific variables */
+    --btn-bg: rgba(0, 0, 0, 0.05);
+    --btn-border: rgba(0, 0, 0, 0.12);
 }
 
 * {
@@ -209,8 +217,8 @@ header {
 
 /* Control Buttons */
 .refresh-btn {
-    background: rgba(255, 255, 255, 0.05);
-    border: 1px solid rgba(255, 255, 255, 0.15);
+    background: var(--btn-bg);
+    border: 1px solid var(--btn-border);
     border-radius: 12px;
     width: 40px;
     height: 40px;
@@ -218,12 +226,12 @@ header {
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    color: #FFFFFF;
+    color: var(--text-primary);
     transition: all 0.3s ease;
 }
 
 .refresh-btn:hover {
-    background: rgba(255, 255, 255, 0.12);
+    background: var(--btn-bg);
     border-color: var(--theme-accent);
     color: var(--theme-accent);
     transform: rotate(180deg);
@@ -886,13 +894,13 @@ header {
 .modal-header h2 {
     font-size: 16px;
     font-weight: 800;
-    color: #FFFFFF;
+    color: var(--text-primary);
 }
 
 .modal-close-btn {
-    background: rgba(255, 255, 255, 0.05);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    color: #FFFFFF;
+    background: var(--btn-bg);
+    border: 1px solid var(--btn-border);
+    color: var(--text-primary);
     width: 32px;
     height: 32px;
     border-radius: 50%;
@@ -906,6 +914,7 @@ header {
 .modal-close-btn:hover {
     background: #EF4444;
     border-color: #EF4444;
+    color: #FFFFFF;
     transform: rotate(90deg);
 }
 
@@ -989,9 +998,9 @@ header {
 
 /* Theme Toggle Button style */
 .theme-toggle-btn {
-    background: rgba(255, 255, 255, 0.05);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    color: #FFFFFF;
+    background: var(--btn-bg);
+    border: 1px solid var(--btn-border);
+    color: var(--text-primary);
     padding: 8px 16px;
     border-radius: 10px;
     cursor: pointer;
