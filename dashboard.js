@@ -20,6 +20,17 @@ let secondsRemaining = REFRESH_INTERVAL_SECONDS;
 let profilePieChart = null;
 let profileHistoChart = null;
 
+// Safe DOM Setters to prevent script crashes on caching or mismatched layouts
+function setTxt(id, val) {
+    const el = document.getElementById(id);
+    if (el) el.innerText = val;
+}
+
+function setHtml(id, val) {
+    const el = document.getElementById(id);
+    if (el) el.innerHTML = val;
+}
+
 // JSONP Script Loader to bypass CORS issues on local files (file:/// URL)
 function fetchSheetJSONP(sheetName) {
     return new Promise((resolve, reject) => {
@@ -73,6 +84,7 @@ function parseGvizReports(table) {
         }
         
         return cols.findIndex(col => {
+            if (!col || !col.label) return false;
             const label = col.label.toLowerCase().trim();
             if (label === k) return true;
             if (label.includes(k)) {
@@ -164,7 +176,7 @@ function parseGvizReports(table) {
 function parseChangeRequestsGviz(table) {
     if (!table || !table.cols || !table.rows || table.rows.length === 0) return [];
     
-    let headers = table.cols.map(col => col.label ? col.label.toLowerCase().trim() : '');
+    let headers = table.cols.map(col => col && col.label ? col.label.toLowerCase().trim() : '');
     const firstRowCells = table.rows[0].c;
     const firstRowValues = firstRowCells ? firstRowCells.map(cell => cell ? String(cell.v).toLowerCase().trim() : '') : [];
     
@@ -218,7 +230,7 @@ function parseChangeRequestsGviz(table) {
 function parseUUIDsGviz(table) {
     if (!table || !table.cols || !table.rows || table.rows.length === 0) return [];
     
-    let headers = table.cols.map(col => col.label ? col.label.toLowerCase().trim() : '');
+    let headers = table.cols.map(col => col && col.label ? col.label.toLowerCase().trim() : '');
     const firstRowCells = table.rows[0].c;
     const firstRowValues = firstRowCells ? firstRowCells.map(cell => cell ? String(cell.v).toLowerCase().trim() : '') : [];
     
@@ -342,7 +354,7 @@ function formatCurrencyUSD(value) {
 async function loadData() {
     try {
         const loader = document.getElementById('loader-overlay');
-        loader.classList.remove('hidden');
+        if (loader) loader.classList.remove('hidden');
         
         // Fetch 4 tabs in parallel via JSONP (fully CORS-safe!)
         const [reportsTable, requestsTable, uuidsTable, ddTable] = await Promise.all([
@@ -374,21 +386,25 @@ async function loadData() {
         updateTab3Dropdowns();
         
         // Update connection status
-        document.getElementById('pulse-indicator').classList.remove('error');
-        document.getElementById('status-text').innerText = 'متصل لحظياً بالخادم';
+        const pulse = document.getElementById('pulse-indicator');
+        if (pulse) pulse.classList.remove('error');
+        setTxt('status-text', 'متصل لحظياً بالخادم');
         
         const now = new Date();
-        document.getElementById('last-updated').innerText = now.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        setTxt('last-updated', now.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
         
-        loader.classList.add('hidden');
+        if (loader) loader.classList.add('hidden');
         resetTimer();
     } catch (error) {
-        console.error("Dashboard error:", error);
-        document.getElementById('pulse-indicator').classList.add('error');
-        document.getElementById('status-text').innerText = 'فشل الاتصال بالخادم';
+        console.error("Dashboard full stack error:", error);
+        
+        // Safe UI failure indicators
+        const pulse = document.getElementById('pulse-indicator');
+        if (pulse) pulse.classList.add('error');
+        setTxt('status-text', 'فشل الاتصال بالخادم');
         
         const loader = document.getElementById('loader-overlay');
-        loader.classList.add('hidden');
+        if (loader) loader.classList.add('hidden');
         resetTimer();
     }
 }
@@ -400,27 +416,27 @@ function updateHeaderKPIs() {
     const branchReports = reportsData.filter(r => !r.isProjectReport).length;
     
     // Uploads Card
-    document.getElementById('kpi-uploads-val').innerText = totalUploads;
-    document.getElementById('kpi-uploads-sub').innerHTML = `<span>${projectReports}</span> مشروع | <span>${branchReports}</span> فرع`;
+    setTxt('kpi-uploads-val', totalUploads);
+    setHtml('kpi-uploads-sub', `<span>${projectReports}</span> مشروع | <span>${branchReports}</span> فرع`);
     
     // Change Requests Card
     const totalRequests = changeRequestsData.length;
     const approvedRequests = changeRequestsData.filter(req => req.status === 'approved' || req.newProjectId).length;
     const pendingRequests = totalRequests - changeRequestsData.filter(req => req.status === 'denied').length - approvedRequests;
-    document.getElementById('kpi-requests-val').innerText = totalRequests;
-    document.getElementById('kpi-requests-sub').innerHTML = `<span>${approvedRequests}</span> مقبول | <span>${pendingRequests}</span> قيد الانتظار`;
+    setTxt('kpi-requests-val', totalRequests);
+    setHtml('kpi-requests-sub', `<span>${approvedRequests}</span> مقبول | <span>${pendingRequests}</span> قيد الانتظار`);
     
     // Coverage & Traffic
     const activeCountries = new Set(reportsData.map(r => r.country).filter(Boolean)).size;
     const uniqueProjects = new Set(reportsData.map(r => r.projectName).filter(Boolean)).size;
-    document.getElementById('kpi-coverage-val').innerText = uniqueProjects;
-    document.getElementById('kpi-coverage-sub').innerHTML = `<span>${activeCountries}</span> دولة | <span>${expectedBranches.size}</span> قطاعات وفروع مسجلة`;
+    setTxt('kpi-coverage-val', uniqueProjects);
+    setHtml('kpi-coverage-sub', `<span>${activeCountries}</span> دولة | <span>${expectedBranches.size}</span> قطاعات وفروع مسجلة`);
 }
 
 // Tab 1: Monthly Reporting Upload KPIs & Auto-reset Month cycle state machine
 function updateTab1Reporting() {
-    // 1. Group reports by month based on timestamp (YYYY-MM)
-    const reportsByMonth = {}; // 'YYYY-MM' -> { projects: Set, branches: Set, raw: [] }
+    // Group reports by month based on timestamp (YYYY-MM)
+    const reportsByMonth = {};
     reportsData.forEach(r => {
         const d = new Date(r.timestamp);
         if (isNaN(d.getTime())) return;
@@ -481,15 +497,17 @@ function updateTab1Reporting() {
         '09': 'سبتمبر', '10': 'أكتوبر', '11': 'نوفمبر', '12': 'ديسمبر'
     };
     const cycleLabel = `دورة المتابعة لشهر ${arabicMonths[mn] || mn} ${yr}`;
-    document.getElementById('active-month-title').innerText = cycleLabel;
+    setTxt('active-month-title', cycleLabel);
 
     const cycleBadge = document.getElementById('cycle-status-badge');
-    if (isComplete) {
-        cycleBadge.innerText = 'دورة مكتملة - تم إعادة الضبط';
-        cycleBadge.className = 'cycle-badge complete';
-    } else {
-        cycleBadge.innerText = 'دورة نشطة جارٍ استلامها';
-        cycleBadge.className = 'cycle-badge';
+    if (cycleBadge) {
+        if (isComplete) {
+            cycleBadge.innerText = 'دورة مكتملة - تم إعادة الضبط';
+            cycleBadge.className = 'cycle-badge complete';
+        } else {
+            cycleBadge.innerText = 'دورة نشطة جارٍ استلامها';
+            cycleBadge.className = 'cycle-badge';
+        }
     }
 
     // Get statistics for the active month
@@ -504,89 +522,93 @@ function updateTab1Reporting() {
     const ringCircumference = 364.42;
     
     const projCircle = document.getElementById('proj-progress-circle');
-    const projOffset = ringCircumference - (projPercent / 100) * ringCircumference;
-    projCircle.style.strokeDashoffset = projOffset;
-    document.getElementById('proj-progress-percent').innerText = `${projPercent}%`;
-    document.getElementById('proj-progress-numbers').innerText = `${activeData.projects.size} من ${totalProjs} مشروع`;
+    if (projCircle) {
+        const projOffset = ringCircumference - (projPercent / 100) * ringCircumference;
+        projCircle.style.strokeDashoffset = projOffset;
+    }
+    setTxt('proj-progress-percent', `${projPercent}%`);
+    setTxt('proj-progress-numbers', `${activeData.projects.size} من ${totalProjs} مشروع`);
 
     const branchCircle = document.getElementById('branch-progress-circle');
-    const branchOffset = ringCircumference - (branchPercent / 100) * ringCircumference;
-    branchCircle.style.strokeDashoffset = branchOffset;
-    document.getElementById('branch-progress-percent').innerText = `${branchPercent}%`;
-    document.getElementById('branch-progress-numbers').innerText = `${activeData.branches.size} من ${totalBranches} فرع`;
+    if (branchCircle) {
+        const branchOffset = ringCircumference - (branchPercent / 100) * ringCircumference;
+        branchCircle.style.strokeDashoffset = branchOffset;
+    }
+    setTxt('branch-progress-percent', `${branchPercent}%`);
+    setTxt('branch-progress-numbers', `${activeData.branches.size} من ${totalBranches} فرع`);
 
     // Separate Submitted and Late lists
     const submittedListBody = document.getElementById('submitted-list-body');
     const lateListBody = document.getElementById('late-list-body');
-    submittedListBody.innerHTML = '';
-    lateListBody.innerHTML = '';
 
-    // Submitted projects/branches in active month
-    let submittedCount = 0;
-    activeData.raw.forEach(r => {
-        submittedCount++;
-        const tr = document.createElement('tr');
-        
-        const dateObj = new Date(r.timestamp);
-        const timeStr = isNaN(dateObj.getTime()) ? r.timestamp : dateObj.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' });
-        const typeBadge = r.isProjectReport 
-            ? `<span class="type-proj">مشروع</span>` 
-            : `<span class="type-branch">فرع</span>`;
-        const name = r.isProjectReport ? r.projectName : r.branchName;
-        const country = r.country || (r.isProjectReport ? projectToCountryMap[name] : branchToCountryMap[name]) || '-';
-
-        tr.innerHTML = `
-            <td style="font-weight:700;">${name}</td>
-            <td>${typeBadge}</td>
-            <td>${country}</td>
-            <td style="font-family:'Outfit';">${timeStr}</td>
-        `;
-        submittedListBody.appendChild(tr);
-    });
-    document.getElementById('submitted-count').innerText = submittedCount;
-
-    // Late/Pending projects/branches (expected but haven't submitted this month)
-    let lateCount = 0;
-    
-    // Find late projects
-    expectedProjects.forEach(pName => {
-        if (!activeData.projects.has(pName)) {
-            lateCount++;
+    if (submittedListBody) {
+        submittedListBody.innerHTML = '';
+        let submittedCount = 0;
+        activeData.raw.forEach(r => {
+            submittedCount++;
             const tr = document.createElement('tr');
-            const country = projectToCountryMap[pName] || '-';
-            tr.innerHTML = `
-                <td style="font-weight:700;">${pName}</td>
-                <td><span class="type-proj">مشروع</span></td>
-                <td>${country}</td>
-                <td><span class="status-late">متأخر عن الإرسال</span></td>
-            `;
-            lateListBody.appendChild(tr);
-        }
-    });
+            const dateObj = new Date(r.timestamp);
+            const timeStr = isNaN(dateObj.getTime()) ? r.timestamp : dateObj.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' });
+            const typeBadge = r.isProjectReport 
+                ? `<span class="type-proj">مشروع</span>` 
+                : `<span class="type-branch">فرع</span>`;
+            const name = r.isProjectReport ? r.projectName : r.branchName;
+            const country = r.country || (r.isProjectReport ? projectToCountryMap[name] : branchToCountryMap[name]) || '-';
 
-    // Find late branches
-    expectedBranches.forEach(bName => {
-        if (!activeData.branches.has(bName)) {
-            lateCount++;
-            const tr = document.createElement('tr');
-            const country = branchToCountryMap[bName] || '-';
             tr.innerHTML = `
-                <td style="font-weight:700;">${bName}</td>
-                <td><span class="type-branch">فرع</span></td>
+                <td style="font-weight:700;">${name}</td>
+                <td>${typeBadge}</td>
                 <td>${country}</td>
-                <td><span class="status-late">متأخر عن الإرسال</span></td>
+                <td style="font-family:'Outfit';">${timeStr}</td>
             `;
-            lateListBody.appendChild(tr);
+            submittedListBody.appendChild(tr);
+        });
+        setTxt('submitted-count', submittedCount);
+        if (submittedCount === 0) {
+            submittedListBody.innerHTML = `<tr><td colspan="4" style="text-align:center; color:var(--text-muted); padding:30px;">لم يتم استلام أي تقارير بعد في هذه الدورة.</td></tr>`;
         }
-    });
-    
-    document.getElementById('late-count').innerText = lateCount;
-    
-    if (submittedCount === 0) {
-        submittedListBody.innerHTML = `<tr><td colspan="4" style="text-align:center; color:var(--text-muted); padding:30px;">لم يتم استلام أي تقارير بعد في هذه الدورة.</td></tr>`;
     }
-    if (lateCount === 0) {
-        lateListBody.innerHTML = `<tr><td colspan="4" style="text-align:center; color:#10B981; font-weight:700; padding:30px;">🏆 التزام كامل! جميع المشاريع والفروع أرسلت تقاريرها.</td></tr>`;
+
+    if (lateListBody) {
+        lateListBody.innerHTML = '';
+        let lateCount = 0;
+        
+        // Find late projects
+        expectedProjects.forEach(pName => {
+            if (!activeData.projects.has(pName)) {
+                lateCount++;
+                const tr = document.createElement('tr');
+                const country = projectToCountryMap[pName] || '-';
+                tr.innerHTML = `
+                    <td style="font-weight:700;">${pName}</td>
+                    <td><span class="type-proj">مشروع</span></td>
+                    <td>${country}</td>
+                    <td><span class="status-late">لم يرسل</span></td>
+                `;
+                lateListBody.appendChild(tr);
+            }
+        });
+
+        // Find late branches
+        expectedBranches.forEach(bName => {
+            if (!activeData.branches.has(bName)) {
+                lateCount++;
+                const tr = document.createElement('tr');
+                const country = branchToCountryMap[bName] || '-';
+                tr.innerHTML = `
+                    <td style="font-weight:700;">${bName}</td>
+                    <td><span class="type-branch">فرع</span></td>
+                    <td>${country}</td>
+                    <td><span class="status-late">لم يرسل</span></td>
+                `;
+                lateListBody.appendChild(tr);
+            }
+        });
+        
+        setTxt('late-count', lateCount);
+        if (lateCount === 0) {
+            lateListBody.innerHTML = `<tr><td colspan="4" style="text-align:center; color:#10B981; font-weight:700; padding:30px;">🏆 التزام كامل! جميع المشاريع والفروع أرسلت تقاريرها.</td></tr>`;
+        }
     }
 }
 
@@ -606,7 +628,7 @@ function updateTab2Management() {
     const currentMonthKey = months[months.length - 1];
     const prevMonthKey = months[months.length - 2];
     
-    // 1. Get latest report per project/branch overall to compute health
+    // Get latest report per project/branch overall to compute health
     const latestOverallReports = {};
     reportsData.forEach(r => {
         const id = r.isProjectReport ? (r.projectId || r.projectName) : (r.branchId || r.branchName);
@@ -634,124 +656,128 @@ function updateTab2Management() {
     });
     
     const lossRatio = totalProjReports > 0 ? (lossProjCount / totalProjReports) : 0;
-    
-    // Elite Indicator evaluation
     const isHealthy = totalPnlUSD >= 0 && lossRatio < 0.15;
+    
     const eliteEl = document.getElementById('elite-indicator');
     const eliteIcon = document.getElementById('elite-status-icon');
     const eliteTitle = document.getElementById('elite-status-title');
     const eliteDesc = document.getElementById('elite-status-desc');
     
-    if (isHealthy) {
-        eliteEl.className = 'elite-banner success-mode';
-        eliteIcon.innerHTML = '<i class="fa-solid fa-circle-check"></i>';
-        eliteTitle.innerText = 'حالة المحفظة: أداء ممتاز ومثالي';
-        eliteDesc.innerHTML = `المحفظة الاستثمارية تحقق أرباحاً إجمالية بقيمة <strong>${formatCurrencyUSD(totalPnlUSD)}</strong> ومعدل المشاريع المتعثرة مالياً أقل من 15% (النسبة الحالية: <strong>${Math.round(lossRatio*100)}%</strong>).`;
-    } else {
-        eliteEl.className = 'elite-banner alert-mode';
-        eliteIcon.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i>';
-        eliteTitle.innerText = 'تنبيه: مؤشرات تراجع في أداء المحفظة';
-        eliteDesc.innerHTML = `يوجد تراجع أداء إما بسبب أرباح سلبية إجمالية (<strong>${formatCurrencyUSD(totalPnlUSD)}</strong>) أو زيادة في المشروعات التي تسجل خسائر مالية (<strong>${Math.round(lossRatio*100)}%</strong>).`;
+    if (eliteEl) {
+        if (isHealthy) {
+            eliteEl.className = 'elite-banner success-mode';
+            if (eliteIcon) eliteIcon.innerHTML = '<i class="fa-solid fa-circle-check"></i>';
+            if (eliteTitle) eliteTitle.innerText = 'حالة المحفظة: أداء ممتاز ومثالي';
+            if (eliteDesc) eliteDesc.innerHTML = `المحفظة الاستثمارية تحقق أرباحاً إجمالية بقيمة <strong>${formatCurrencyUSD(totalPnlUSD)}</strong> ومعدل المشاريع المتعثرة مالياً أقل من 15% (النسبة الحالية: <strong>${Math.round(lossRatio*100)}%</strong>).`;
+        } else {
+            eliteEl.className = 'elite-banner alert-mode';
+            if (eliteIcon) eliteIcon.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i>';
+            if (eliteTitle) eliteTitle.innerText = 'تنبيه: مؤشرات تراجع في أداء المحفظة';
+            if (eliteDesc) eliteDesc.innerHTML = `يوجد تراجع أداء إما بسبب أرباح سلبية إجمالية (<strong>${formatCurrencyUSD(totalPnlUSD)}</strong>) أو زيادة في المشروعات التي تسجل خسائر مالية (<strong>${Math.round(lossRatio*100)}%</strong>).`;
+        }
     }
 
     // 2. Generate stock ticker comparing current month reports vs previous month reports
     const tickerContent = document.getElementById('ticker-content');
-    tickerContent.innerHTML = '';
-    
-    // Map previous month projects by project ID or name
-    const prevMonthData = {};
-    if (prevMonthKey && reportsByMonth[prevMonthKey]) {
-        reportsByMonth[prevMonthKey].forEach(r => {
-            if (r.isProjectReport) prevMonthData[r.projectName] = r;
-        });
-    }
-    
-    const currentMonthReports = reportsByMonth[currentMonthKey] || [];
-    let tickerItemsHtml = '';
-    
-    currentMonthReports.forEach(r => {
-        if (!r.isProjectReport) return;
-        const prev = prevMonthData[r.projectName];
+    if (tickerContent) {
+        tickerContent.innerHTML = '';
         
-        let pnlTrendSymbol = '';
-        let progressTrendSymbol = '';
-        
-        if (prev) {
-            const pnlDiff = r.pnl - prev.pnl;
-            const progDiff = r.progress - prev.progress;
-            
-            pnlTrendSymbol = pnlDiff >= 0 
-                ? `<span class="up">▲ $${(pnlDiff/1e3).toFixed(1)}K</span>` 
-                : `<span class="down">▼ $${(Math.abs(pnlDiff)/1e3).toFixed(1)}K</span>`;
-                
-            progressTrendSymbol = progDiff >= 0 
-                ? `<span class="up">▲ ${progDiff.toFixed(1)}%</span>` 
-                : `<span class="down">▼ ${Math.abs(progDiff).toFixed(1)}%</span>`;
-        } else {
-            pnlTrendSymbol = `<span class="up">جديد</span>`;
-            progressTrendSymbol = `<span class="up">جديد</span>`;
+        const prevMonthData = {};
+        if (prevMonthKey && reportsByMonth[prevMonthKey]) {
+            reportsByMonth[prevMonthKey].forEach(r => {
+                if (r.isProjectReport) prevMonthData[r.projectName] = r;
+            });
         }
         
-        tickerItemsHtml += `
-            <span class="ticker-item">
-                <strong>${r.projectName}</strong>: 
-                الربح: ${formatCurrencyUSD(r.pnl)} (${pnlTrendSymbol}) | 
-                التقدم: ${r.progress}% (${progressTrendSymbol})
-            </span>
-        `;
-    });
-    
-    if (!tickerItemsHtml) {
-        tickerContent.innerHTML = '<span class="ticker-item">لا توجد مقارنات أداء للشهر الحالي بعد</span>';
-    } else {
-        // Double the content to create a seamless infinite scrolling effect
-        tickerContent.innerHTML = tickerItemsHtml + tickerItemsHtml;
+        const currentMonthReports = reportsByMonth[currentMonthKey] || [];
+        let tickerItemsHtml = '';
+        
+        currentMonthReports.forEach(r => {
+            if (!r.isProjectReport) return;
+            const prev = prevMonthData[r.projectName];
+            
+            let pnlTrendSymbol = '';
+            let progressTrendSymbol = '';
+            
+            if (prev) {
+                const pnlDiff = r.pnl - prev.pnl;
+                const progDiff = r.progress - prev.progress;
+                
+                pnlTrendSymbol = pnlDiff >= 0 
+                    ? `<span class="up">▲ $${(pnlDiff/1e3).toFixed(1)}K</span>` 
+                    : `<span class="down">▼ $${(Math.abs(pnlDiff)/1e3).toFixed(1)}K</span>`;
+                    
+                progressTrendSymbol = progDiff >= 0 
+                    ? `<span class="up">▲ ${progDiff.toFixed(1)}%</span>` 
+                    : `<span class="down">▼ ${Math.abs(progDiff).toFixed(1)}%</span>`;
+            } else {
+                pnlTrendSymbol = `<span class="up">جديد</span>`;
+                progressTrendSymbol = `<span class="up">جديد</span>`;
+            }
+            
+            tickerItemsHtml += `
+                <span class="ticker-item">
+                    <strong>${r.projectName}</strong>: 
+                    الربح: ${formatCurrencyUSD(r.pnl)} (${pnlTrendSymbol}) | 
+                    التقدم: ${r.progress}% (${progressTrendSymbol})
+                </span>
+            `;
+        });
+        
+        if (!tickerItemsHtml) {
+            tickerContent.innerHTML = '<span class="ticker-item">لا توجد مقارنات أداء للشهر الحالي بعد</span>';
+        } else {
+            tickerContent.innerHTML = tickerItemsHtml + tickerItemsHtml;
+        }
     }
 
     // 3. Populate management table grid
     const managementGridBody = document.getElementById('management-grid-body');
-    managementGridBody.innerHTML = '';
-    
-    activePortfolio.forEach(r => {
-        const tr = document.createElement('tr');
+    if (managementGridBody) {
+        managementGridBody.innerHTML = '';
         
-        const name = r.isProjectReport ? r.projectName : r.branchName;
-        const typeBadge = r.isProjectReport 
-            ? '<span class="badge proj">مشروع</span>' 
-            : '<span class="badge branch">فرع</span>';
-        const country = r.country || (r.isProjectReport ? projectToCountryMap[name] : branchToCountryMap[name]) || '-';
-        
-        const progressVal = r.isProjectReport ? `${r.progress}%` : '-';
-        const pnlStr = r.pnl >= 0 
-            ? `<span class="pnl-pos">${formatCurrencyUSD(r.pnl)}</span>` 
-            : `<span class="pnl-neg">${formatCurrencyUSD(r.pnl)}</span>`;
+        activePortfolio.forEach(r => {
+            const tr = document.createElement('tr');
+            const name = r.isProjectReport ? r.projectName : r.branchName;
+            const typeBadge = r.isProjectReport 
+                ? '<span class="badge proj">مشروع</span>' 
+                : '<span class="badge branch">فرع</span>';
+            const country = r.country || (r.isProjectReport ? projectToCountryMap[name] : branchToCountryMap[name]) || '-';
             
-        // Quick visual health indicator
-        const isLoss = r.pnl < 0;
-        const quickIndicator = isLoss
-            ? '<span class="status-indicator-pill danger"><i class="fa-solid fa-circle-exclamation"></i> تراجع مالي</span>'
-            : '<span class="status-indicator-pill success"><i class="fa-solid fa-circle-check"></i> منتظم</span>';
-            
-        tr.innerHTML = `
-            <td style="font-weight: 700; max-width: 350px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${name}</td>
-            <td>${typeBadge}</td>
-            <td>${country}</td>
-            <td style="font-family: 'Outfit'; font-weight:700;">${progressVal}</td>
-            <td>${pnlStr}</td>
-            <td>${quickIndicator}</td>
-        `;
-        managementGridBody.appendChild(tr);
-    });
-    
-    // Add grid filter listener
-    const searchInput = document.getElementById('management-search');
-    searchInput.addEventListener('input', () => {
-        const q = searchInput.value.toLowerCase().trim();
-        const rows = managementGridBody.querySelectorAll('tr');
-        rows.forEach(row => {
-            row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none';
+            const progressVal = r.isProjectReport ? `${r.progress}%` : '-';
+            const pnlStr = r.pnl >= 0 
+                ? `<span class="pnl-pos">${formatCurrencyUSD(r.pnl)}</span>` 
+                : `<span class="pnl-neg">${formatCurrencyUSD(r.pnl)}</span>`;
+                
+            const isLoss = r.pnl < 0;
+            const quickIndicator = isLoss
+                ? '<span class="status-indicator-pill danger"><i class="fa-solid fa-circle-exclamation"></i> تراجع مالي</span>'
+                : '<span class="status-indicator-pill success"><i class="fa-solid fa-circle-check"></i> منتظم</span>';
+                
+            tr.innerHTML = `
+                <td style="font-weight: 700; max-width: 350px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${name}</td>
+                <td>${typeBadge}</td>
+                <td>${country}</td>
+                <td style="font-family: 'Outfit'; font-weight:700;">${progressVal}</td>
+                <td>${pnlStr}</td>
+                <td>${quickIndicator}</td>
+            `;
+            managementGridBody.appendChild(tr);
         });
-    });
+        
+        // Add grid filter listener (safe setup)
+        const searchInput = document.getElementById('management-search');
+        if (searchInput && !searchInput.dataset.hasListener) {
+            searchInput.dataset.hasListener = "true";
+            searchInput.addEventListener('input', () => {
+                const q = searchInput.value.toLowerCase().trim();
+                const rows = managementGridBody.querySelectorAll('tr');
+                rows.forEach(row => {
+                    row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none';
+                });
+            });
+        }
+    }
 }
 
 // Tab 3: Dynamic Dropdown selector and Profile cards
@@ -759,6 +785,8 @@ function updateTab3Dropdowns() {
     const selectCountry = document.getElementById('select-country');
     const selectBranch = document.getElementById('select-branch');
     const selectProject = document.getElementById('select-project');
+    
+    if (!selectCountry || !selectBranch || !selectProject) return;
     
     // 1. Populate Country List
     const countriesSet = new Set();
@@ -829,7 +857,7 @@ function updateTab3Dropdowns() {
             }
         });
         
-        // Add a placeholder project report selection for the branch itself!
+        // Add a placeholder project report selection for the branch itself
         const branchOpt = document.createElement('option');
         branchOpt.value = `BRANCH_${branchName}`;
         branchOpt.innerText = `[تقرير الفرع] - ${branchName}`;
@@ -858,14 +886,18 @@ function updateTab3Dropdowns() {
 }
 
 function hideProfile() {
-    document.getElementById('browser-empty-prompt').classList.remove('hidden');
-    document.getElementById('browser-profile-container').classList.add('hidden');
+    const emptyPrompt = document.getElementById('browser-empty-prompt');
+    const profileContainer = document.getElementById('browser-profile-container');
+    if (emptyPrompt) emptyPrompt.classList.remove('hidden');
+    if (profileContainer) profileContainer.classList.add('hidden');
 }
 
 // Render dynamic project/branch details profile card
 function showProfile(identifier) {
-    document.getElementById('browser-empty-prompt').classList.add('hidden');
-    document.getElementById('browser-profile-container').classList.remove('hidden');
+    const emptyPrompt = document.getElementById('browser-empty-prompt');
+    const profileContainer = document.getElementById('browser-profile-container');
+    if (emptyPrompt) emptyPrompt.classList.add('hidden');
+    if (profileContainer) profileContainer.classList.remove('hidden');
     
     const isBranchReport = identifier.startsWith('BRANCH_');
     const name = isBranchReport ? identifier.replace('BRANCH_', '') : identifier;
@@ -879,46 +911,53 @@ function showProfile(identifier) {
     const latest = history[history.length - 1] || null;
     
     // Update elements
-    document.getElementById('profile-badge-type').innerText = isBranchReport ? 'تقرير مالي للفرع' : 'تقرير أداء للمشروع';
-    document.getElementById('profile-badge-type').className = isBranchReport ? 'profile-badge type-branch' : 'profile-badge type-proj';
+    const badgeType = document.getElementById('profile-badge-type');
+    if (badgeType) {
+        badgeType.innerText = isBranchReport ? 'تقرير مالي للفرع' : 'تقرير أداء للمشروع';
+        badgeType.className = isBranchReport ? 'profile-badge type-branch' : 'profile-badge type-proj';
+    }
     
-    document.getElementById('profile-title-name').innerText = name;
-    document.getElementById('profile-subtitle-client').innerText = latest 
-        ? `العميل: ${latest.clientName || '-'}` 
-        : `الجهة: ${isBranchReport ? 'الفرع الإقليمي' : 'المشروع الخارجي'}`;
+    setTxt('profile-title-name', name);
+    
+    const subtitle = document.getElementById('profile-subtitle-client');
+    if (subtitle) {
+        subtitle.innerText = latest 
+            ? `العميل: ${latest.clientName || '-'}` 
+            : `الجهة: ${isBranchReport ? 'الفرع الإقليمي' : 'المشروع الخارجي'}`;
+    }
         
     const country = isBranchReport ? branchToCountryMap[name] : projectToCountryMap[name];
-    document.getElementById('profile-country').innerText = country || '-';
+    setTxt('profile-country', country || '-');
     
     const branch = isBranchReport ? name : (projectToBranchMap[name] || '-');
-    document.getElementById('profile-branch').innerText = branch;
+    setTxt('profile-branch', branch);
     
     const pnlVal = latest ? latest.pnl : 0;
     const progressVal = latest ? latest.progress : 0;
     
-    document.getElementById('profile-progress').innerText = isBranchReport ? '-' : `${progressVal}%`;
-    document.getElementById('profile-pnl').innerText = latest ? formatCurrencyUSD(pnlVal) : '-';
+    setTxt('profile-progress', isBranchReport ? '-' : `${progressVal}%`);
+    setTxt('profile-pnl', latest ? formatCurrencyUSD(pnlVal) : '-');
     
     // Dynamic Risk Index Badge Calculation (0-100)
-    let riskScore = 10; // base risk
+    let riskScore = 10;
     
     if (latest) {
-        if (latest.pnl < 0) riskScore += 35; // loss penalty
+        if (latest.pnl < 0) riskScore += 35;
         if (!isBranchReport) {
-            // progress delays
             if (latest.progress < 30) riskScore += 20;
             else if (latest.progress < 60) riskScore += 10;
         }
     } else {
-        riskScore += 40; // No reports submitted is high risk
+        riskScore += 40;
     }
     
     const riskBadge = document.getElementById('risk-badge-val');
-    riskBadge.innerText = riskScore >= 50 
-        ? `مخاطر مرتفعة (${riskScore}%)` 
-        : `مخاطر منخفضة (${riskScore}%)`;
-        
-    riskBadge.className = riskScore >= 50 ? 'risk-badge high' : 'risk-badge low';
+    if (riskBadge) {
+        riskBadge.innerText = riskScore >= 50 
+            ? `مخاطر مرتفعة (${riskScore}%)` 
+            : `مخاطر منخفضة (${riskScore}%)`;
+        riskBadge.className = riskScore >= 50 ? 'risk-badge high' : 'risk-badge low';
+    }
 
     // RENDER CHARTS
     renderProfileCharts(isBranchReport, name, latest, history);
@@ -927,117 +966,117 @@ function showProfile(identifier) {
 // Generate Pie Chart and progress timeline histogram
 function renderProfileCharts(isBranch, name, latest, history) {
     const cssStyle = getComputedStyle(document.documentElement);
-    const accentColor = cssStyle.getPropertyValue('--theme-accent').trim();
+    const accentColor = cssStyle.getPropertyValue('--theme-accent').trim() || '#FCA311';
     
-    // 1. Pie Chart
-    const pieCtx = document.getElementById('profilePieChart').getContext('2d');
-    if (profilePieChart) profilePieChart.destroy();
-    
-    let pieLabels = [];
-    let pieData = [];
-    let pieColors = [];
-    
-    if (latest) {
-        if (isBranch) {
-            // Branch revenues vs expenses vs p&l
-            pieLabels = ['إجمالي المصروفات', 'صافي الأرباح/الخسائر'];
-            // If profit is negative (loss), represent mathematically
-            const absPnl = Math.abs(latest.pnl);
-            pieData = [latest.contractValue || 100, absPnl]; // contractValue holds expenses in this map
-            pieColors = ['#EF4444', latest.pnl >= 0 ? '#10B981' : '#F59E0B'];
+    const pieCanvas = document.getElementById('profilePieChart');
+    if (pieCanvas) {
+        const pieCtx = pieCanvas.getContext('2d');
+        if (profilePieChart) profilePieChart.destroy();
+        
+        let pieLabels = [];
+        let pieData = [];
+        let pieColors = [];
+        
+        if (latest) {
+            if (isBranch) {
+                pieLabels = ['إجمالي المصروفات', 'صافي الأرباح/الخسائر'];
+                const absPnl = Math.abs(latest.pnl);
+                pieData = [latest.contractValue || 100, absPnl];
+                pieColors = ['#EF4444', latest.pnl >= 0 ? '#10B981' : '#F59E0B'];
+            } else {
+                const executed = latest.executedValue || 0;
+                const contractVal = latest.valueUsd || 100;
+                const remaining = Math.max(0, contractVal - executed);
+                
+                pieLabels = ['الأعمال المنفذة المعتمدة', 'الأعمال المتبقية بالدولار'];
+                pieData = [executed, remaining];
+                pieColors = [accentColor, '#3B82F6'];
+            }
         } else {
-            // Project executed billed vs remaining contract balance
-            const executed = latest.executedValue || 0;
-            const contractVal = latest.valueUsd || 100;
-            const remaining = Math.max(0, contractVal - executed);
-            
-            pieLabels = ['الأعمال المنفذة المعتمدة', 'الأعمال المتبقية بالدولار'];
-            pieData = [executed, remaining];
-            pieColors = [accentColor, '#3B82F6'];
+            pieLabels = ['لا توجد بيانات مالية'];
+            pieData = [1];
+            pieColors = ['rgba(255,255,255,0.05)'];
         }
-    } else {
-        // Placeholder empty state data
-        pieLabels = ['لا توجد بيانات مالية'];
-        pieData = [1];
-        pieColors = ['rgba(255,255,255,0.05)'];
-    }
-    
-    profilePieChart = new Chart(pieCtx, {
-        type: 'pie',
-        data: {
-            labels: pieLabels,
-            datasets: [{
-                data: pieData,
-                backgroundColor: pieColors,
-                borderColor: '#1A294C',
-                borderWidth: 2
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                legend: {
-                    position: 'bottom',
-                    labels: { color: '#FFFFFF', font: { family: 'Tajawal', size: 11 } }
-                }
-            }
-        }
-    });
-    
-    // 2. Histogram / Bar Chart
-    const histoCtx = document.getElementById('profileHistoChart').getContext('2d');
-    if (profileHistoChart) profileHistoChart.destroy();
-    
-    let histoLabels = [];
-    let histoData = [];
-    let labelText = '';
-    
-    if (history.length > 0) {
-        history.slice(-10).forEach(r => {
-            histoLabels.push(r.measurementDate || 'بدون تاريخ');
-            histoData.push(isBranch ? r.pnl : r.progress);
-        });
-        labelText = isBranch ? 'صافي الربح / الخسارة بالعملة المحلية' : 'نسبة الإنجاز المخططة (%)';
-    } else {
-        histoLabels = ['لا توجد تقارير'];
-        histoData = [0];
-        labelText = 'لا توجد بيانات';
-    }
-    
-    profileHistoChart = new Chart(histoCtx, {
-        type: 'bar',
-        data: {
-            labels: histoLabels,
-            datasets: [{
-                label: labelText,
-                data: histoData,
-                backgroundColor: isBranch ? 'rgba(59, 130, 246, 0.4)' : 'rgba(252, 163, 17, 0.4)',
-                borderColor: isBranch ? '#3B82F6' : accentColor,
-                borderWidth: 2,
-                borderRadius: 5
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            scales: {
-                x: {
-                    ticks: { color: '#A0AEC0', font: { family: 'Outfit', size: 10 } },
-                    grid: { color: 'rgba(255, 255, 255, 0.05)' }
-                },
-                y: {
-                    ticks: { color: '#A0AEC0', font: { family: 'Outfit', size: 10 } },
-                    grid: { color: 'rgba(255, 255, 255, 0.05)' }
-                }
+        
+        profilePieChart = new Chart(pieCtx, {
+            type: 'pie',
+            data: {
+                labels: pieLabels,
+                datasets: [{
+                    data: pieData,
+                    backgroundColor: pieColors,
+                    borderColor: '#162444',
+                    borderWidth: 2
+                }]
             },
-            plugins: {
-                legend: {
-                    labels: { color: '#FFFFFF', font: { family: 'Tajawal', size: 11 } }
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'bottom',
+                        labels: { color: '#FFFFFF', font: { family: 'Tajawal', size: 10 } }
+                    }
                 }
             }
+        });
+    }
+    
+    const histoCanvas = document.getElementById('profileHistoChart');
+    if (histoCanvas) {
+        const histoCtx = histoCanvas.getContext('2d');
+        if (profileHistoChart) profileHistoChart.destroy();
+        
+        let histoLabels = [];
+        let histoData = [];
+        let labelText = '';
+        
+        if (history.length > 0) {
+            history.slice(-10).forEach(r => {
+                histoLabels.push(r.measurementDate || 'بدون تاريخ');
+                histoData.push(isBranch ? r.pnl : r.progress);
+            });
+            labelText = isBranch ? 'صافي الربح / الخسارة بالعملة المحلية' : 'نسبة الإنجاز المخططة (%)';
+        } else {
+            histoLabels = ['لا توجد تقارير'];
+            histoData = [0];
+            labelText = 'لا توجد بيانات';
         }
-    });
+        
+        profileHistoChart = new Chart(histoCtx, {
+            type: 'bar',
+            data: {
+                labels: histoLabels,
+                datasets: [{
+                    label: labelText,
+                    data: histoData,
+                    backgroundColor: isBranch ? 'rgba(59, 130, 246, 0.4)' : 'rgba(252, 163, 17, 0.4)',
+                    borderColor: isBranch ? '#3B82F6' : accentColor,
+                    borderWidth: 2,
+                    borderRadius: 4
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    x: {
+                        ticks: { color: '#A0AEC0', font: { family: 'Outfit', size: 9 } },
+                        grid: { color: 'rgba(255, 255, 255, 0.05)' }
+                    },
+                    y: {
+                        ticks: { color: '#A0AEC0', font: { family: 'Outfit', size: 9 } },
+                        grid: { color: 'rgba(255, 255, 255, 0.05)' }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        labels: { color: '#FFFFFF', font: { family: 'Tajawal', size: 10 } }
+                    }
+                }
+            }
+        });
+    }
 }
 
 // Real-time Timer Sync countdown
@@ -1057,7 +1096,7 @@ function resetTimer() {
 }
 
 function updateTimerUI() {
-    document.getElementById('countdown-seconds').innerText = secondsRemaining;
+    setTxt('countdown-seconds', secondsRemaining);
 }
 
 // Tab Switching
@@ -1066,7 +1105,9 @@ function switchMainTab(tabId, btn) {
     document.querySelectorAll('.main-tab-content').forEach(c => c.classList.remove('active'));
     
     btn.classList.add('active');
-    document.getElementById(tabId).classList.add('active');
+    
+    const target = document.getElementById(tabId);
+    if (target) target.classList.add('active');
 }
 
 // Initialize on page load
@@ -1078,7 +1119,10 @@ window.addEventListener('DOMContentLoaded', () => {
     loadData();
     
     // Refresh Button Click
-    document.getElementById('refresh-btn').addEventListener('click', () => {
-        loadData();
-    });
+    const refreshBtn = document.getElementById('refresh-btn');
+    if (refreshBtn) {
+        refreshBtn.addEventListener('click', () => {
+            loadData();
+        });
+    }
 });
