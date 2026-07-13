@@ -482,6 +482,8 @@ function renderCharts() {
     const mutedColor = cssStyle.getPropertyValue('--theme-muted').trim();
     const deepColor = cssStyle.getPropertyValue('--theme-deep').trim();
     const panelColor = cssStyle.getPropertyValue('--theme-panel').trim();
+    const textColor = cssStyle.getPropertyValue('--text-primary').trim() || '#FFFFFF';
+    const gridColor = `rgba(${cssStyle.getPropertyValue('--theme-accent-rgb').trim() || '255, 255, 255'}, 0.2)`;
     
     // 1. Report Type breakdown
     const projectReports = reportsData.filter(r => r.isProjectReport).length;
@@ -507,7 +509,7 @@ function renderCharts() {
             plugins: {
                 legend: {
                     position: 'bottom',
-                    labels: { color: '#FFFFFF', font: { family: 'Tajawal' } }
+                    labels: { color: textColor, font: { family: 'Tajawal' } }
                 }
             }
         }
@@ -549,12 +551,12 @@ function renderCharts() {
             maintainAspectRatio: false,
             scales: {
                 x: {
-                    ticks: { color: '#A0AEC0', font: { family: 'Outfit' } },
-                    grid: { color: 'rgba(255, 255, 255, 0.05)' }
+                    ticks: { color: textColor, font: { family: 'Outfit' } },
+                    grid: { color: gridColor }
                 },
                 y: {
-                    ticks: { color: '#A0AEC0', font: { family: 'Outfit' }, stepSize: 1 },
-                    grid: { color: 'rgba(255, 255, 255, 0.05)' }
+                    ticks: { color: textColor, font: { family: 'Outfit' }, stepSize: 1 },
+                    grid: { color: gridColor }
                 }
             },
             plugins: {
@@ -616,7 +618,26 @@ function getFlagIconClass(countryName) {
         'جمهورية تشاد': 'fi-td',
         'تشاد': 'fi-td',
         'اتحاد جزر القمر': 'fi-km',
-        'جزر القمر': 'fi-km'
+        'جزر القمر': 'fi-km',
+        'سلطنة عُمان': 'fi-om',
+        'سلطنة عمان': 'fi-om',
+        'عمان': 'fi-om',
+        'أوغندا': 'fi-ug',
+        'جمهورية أوغندا': 'fi-ug',
+        'زامبيا': 'fi-zm',
+        'جمهورية زامبيا': 'fi-zm',
+        'غانا': 'fi-gh',
+        'جمهورية غانا': 'fi-gh',
+        'غينيا': 'fi-gn',
+        'جمهورية غينيا': 'fi-gn',
+        'الكاميرون': 'fi-cm',
+        'جمهورية الكاميرون': 'fi-cm',
+        'كوت ديفوار': 'fi-ci',
+        'ساحل العاج': 'fi-ci',
+        'الكونغو': 'fi-cg',
+        'جمهورية الكونغو الديمقراطية': 'fi-cd',
+        'قطر': 'fi-qa',
+        'دولة قطر': 'fi-qa'
     };
     return flags[countryName.trim()] || 'fi-xx';
 }
@@ -684,13 +705,18 @@ function toggleTheme() {
     selectTheme(nextTheme);
 }
 
-// deduplicate files uploaded twice: Keep only the latest report for each unique context & measurement date
+// deduplicate files uploaded twice: Keep only the latest report for each unique project/branch per YYYY-MM cycle
 function deduplicateReports(reports) {
     const uniqueMap = {};
     reports.forEach(r => {
+        const d = new Date(r.timestamp);
+        if (isNaN(d.getTime())) return;
+        const cycleKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        
         const id = r.isProjectReport ? (r.projectId || r.projectName) : (r.branchId || r.branchName);
-        const date = r.measurementDate || 'no_date';
-        const key = `${r.isProjectReport ? 'P' : 'B'}_${id}_${date}`;
+        if (!id) return;
+        
+        const key = `${cycleKey}_${r.isProjectReport ? 'P' : 'B'}_${id}`;
         
         const existing = uniqueMap[key];
         if (!existing || new Date(r.timestamp) > new Date(existing.timestamp)) {
