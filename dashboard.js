@@ -692,13 +692,25 @@ function toggleTheme() {
     selectTheme(nextTheme);
 }
 
+// Normalise Google Sheets timestamps because mobile browsers do not reliably parse its space-separated format.
+function parseSheetTimestamp(timestamp) {
+    const timestampText = String(timestamp || '').trim();
+    if (!timestampText) return null;
+
+    const isoTimestamp = timestampText
+        .replace(/^(\d{4}-\d{2}-\d{2})\s+/, '$1T')
+        .replace(/\s+GMT$/, 'Z');
+    const parsedTimestamp = new Date(isoTimestamp);
+    return isNaN(parsedTimestamp.getTime()) ? null : parsedTimestamp;
+}
+
 // deduplicate files uploaded twice: Keep only the latest report for each unique project/branch per YYYY-MM cycle
 function deduplicateReports(reports) {
     const uniqueMap = {};
     reports.forEach(r => {
-        const d = new Date(r.timestamp);
-        if (isNaN(d.getTime())) return;
-        const cycleKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        const submittedAt = parseSheetTimestamp(r.timestamp);
+        if (!submittedAt) return;
+        const cycleKey = `${submittedAt.getFullYear()}-${String(submittedAt.getMonth() + 1).padStart(2, '0')}`;
         
         const id = r.isProjectReport ? (r.projectId || r.projectName) : (r.branchId || r.branchName);
         if (!id) return;
@@ -706,7 +718,7 @@ function deduplicateReports(reports) {
         const key = `${cycleKey}_${r.isProjectReport ? 'P' : 'B'}_${id}`;
         
         const existing = uniqueMap[key];
-        if (!existing || new Date(r.timestamp) > new Date(existing.timestamp)) {
+        if (!existing || submittedAt > parseSheetTimestamp(existing.timestamp)) {
             uniqueMap[key] = r;
         }
     });
