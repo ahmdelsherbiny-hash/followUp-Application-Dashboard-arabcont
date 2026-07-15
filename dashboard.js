@@ -352,8 +352,8 @@ function updateKPIs() {
     // Calculate Project and Branch commitment rates
     const reportsByMonth = {};
     reportsData.forEach(r => {
-        const d = new Date(r.timestamp);
-        if (isNaN(d.getTime())) return;
+        const d = parseSheetTimestamp(r.timestamp);
+        if (!d) return;
         const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
         if (!reportsByMonth[key]) {
             reportsByMonth[key] = { projects: new Set(), branches: new Set(), raw: [] };
@@ -490,8 +490,8 @@ function renderCharts() {
     // 2. Activity Timeline over time
     const activityTimeline = {};
     reportsData.forEach(r => {
-        const dateObj = new Date(r.timestamp);
-        if (!isNaN(dateObj.getTime())) {
+        const dateObj = parseSheetTimestamp(r.timestamp);
+        if (dateObj) {
             const dayStr = dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
             activityTimeline[dayStr] = (activityTimeline[dayStr] || 0) + 1;
         }
