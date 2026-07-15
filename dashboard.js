@@ -31,7 +31,7 @@ function fetchSheetJSONP(sheetName) {
             if (response.status === 'ok') {
                 resolve(response.table);
             } else {
-                reject(new Error(`Gviz error for sheet ${sheetName}: ${response.errors?.[0]?.message || 'Unknown error'}`));
+                reject(new Error(`Gviz error for sheet ${sheetName}: ${(response.errors && response.errors[0]) ? response.errors[0].message : 'Unknown error'}`));
             }
         };
         
