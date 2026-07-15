@@ -17,7 +17,7 @@ let syncTimer = null;
 let secondsRemaining = REFRESH_INTERVAL_SECONDS;
 
 // Chart references for dynamic updates
-let typeChart = null;
+
 let countryChart = null;
 let timelineChart = null;
 
@@ -485,35 +485,7 @@ function renderCharts() {
     const textColor = cssStyle.getPropertyValue('--text-primary').trim() || '#FFFFFF';
     const gridColor = `rgba(${cssStyle.getPropertyValue('--theme-accent-rgb').trim() || '255, 255, 255'}, 0.2)`;
     
-    // 1. Report Type breakdown
-    const projectReports = reportsData.filter(r => r.isProjectReport).length;
-    const branchReports = reportsData.filter(r => !r.isProjectReport).length;
-    
-    const typeCtx = document.getElementById('reportTypeChart').getContext('2d');
-    if (typeChart) typeChart.destroy();
-    
-    typeChart = new Chart(typeCtx, {
-        type: 'doughnut',
-        data: {
-            labels: ['تقارير المشروعات', 'تقارير الفروع'],
-            datasets: [{
-                data: [projectReports, branchReports],
-                backgroundColor: [accentColor, '#3B82F6'],
-                borderColor: panelColor,
-                borderWidth: 2
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                legend: {
-                    position: 'bottom',
-                    labels: { color: textColor, font: { family: 'Tajawal' } }
-                }
-            }
-        }
-    });
+
     
     // 2. Activity Timeline over time
     const activityTimeline = {};
